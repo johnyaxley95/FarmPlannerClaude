@@ -335,7 +335,7 @@ hr{border:none;border-top:2px solid var(--border);margin:12px 0}
   box-shadow:5px 5px 0 rgba(61,46,28,.3);padding:20px 24px;margin-bottom:14px;
 }
 .plan-hero h2{color:var(--card);font-size:11px}
-.plan-meta{font-size:12px;color:var(--green-xlt);margin-top:6px;font-family:"Segoe UI","Segoe UI Historic",Tahoma,Geneva,sans-serif;line-height:1.5}
+.plan-meta{font-size:11px;color:var(--green-xlt);margin-top:6px;font-family:"Segoe UI","Segoe UI Historic",Tahoma,Geneva,sans-serif;line-height:1.5}
 
 /* ── Crop filter bar ─────────────────────────────────────────────────── */
 .crop-filter-bar{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
@@ -375,7 +375,7 @@ hr{border:none;border-top:2px solid var(--border);margin:12px 0}
 .sel-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
 /* ── Objectives ──────────────────────────────────────────────────────── */
-.obj-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.obj-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
 .obj-regen-wrap{display:flex;gap:10px;align-items:stretch}
 .obj-card{padding:6px 10px;cursor:pointer;transition:all .1s;text-align:left;white-space:normal;
   border-top:2px solid var(--border-lt);border-left:2px solid var(--border-lt);
@@ -423,7 +423,7 @@ hr{border:none;border-top:2px solid var(--border);margin:12px 0}
 /* === Plan adjustment UI (Nutrition tab) === */
 .adj-intro{background:var(--card);border:3px solid var(--border-dk);padding:14px 16px;margin-bottom:10px;box-shadow:var(--px-shadow);border-left:6px solid var(--green-dk)}
 .adj-intro h2{margin:0 0 4px 0;font-size:15px;color:var(--green-dk)}
-.adj-intro p{margin:0;color:var(--text-mid);font-size:12px;line-height:1.4}
+.adj-intro p{margin:0;color:var(--text-mid);font-size:11px;line-height:1.4}
 .adj-sticky{position:sticky;top:0;z-index:20;background:var(--bg);padding:2px 0 6px 0;margin-bottom:8px}
 .adj-bud-strip{background:var(--card);border:3px solid var(--green-dk);padding:7px 12px;box-shadow:var(--px-shadow);display:flex;flex-direction:column;gap:6px}
 .adj-bud-toprow{display:flex;align-items:center;gap:18px}
@@ -601,6 +601,7 @@ hr{border:none;border-top:2px solid var(--border);margin:12px 0}
 .ls-output-tag{font-size:10px;background:var(--green-lt);border:1px solid var(--green);padding:2px 7px;color:var(--green-dk);font-weight:600;white-space:nowrap}
 .ls-output-tag.dairy-tag{background:#EDE3CB;border-color:#C8AA6E;color:#7A5C00}
 .ls-output-tag.disc-tag{background:#F5F0E0;border-color:#CCC;color:#666}
+.ls-output-tag.oils-tag{background:#F5EEC8;border-color:#C4A030;color:#5A4000}
 .ls-space-pill{font-size:10px;background:var(--oat);border:1px solid var(--border-dk);padding:2px 7px;color:var(--text-mid)}
 .ls-row-active{background:var(--green-xlt);border-color:var(--green-lt)}
 
@@ -997,7 +998,9 @@ body{font-size:var(--den-fs)!important}
 .land-fig-axis{display:flex;justify-content:space-between;margin-top:2px;
   font-family:var(--mono);font-size:9px;color:var(--text-mid)}
 .land-fig-axiscap{text-align:center;font-size:9px;color:var(--text-mid);margin-top:1px}
-.land-fig-legend{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;margin-top:8px}
+.land-fig-legend{display:flex;gap:0 20px;margin-top:8px;flex-wrap:wrap;align-items:flex-start}
+.land-leg-left{flex:0 0 auto;display:flex;flex-direction:column;gap:2px}
+.land-leg-right{flex:1;min-width:160px;display:flex;flex-direction:column;gap:2px}
 .land-leg-row{display:flex;align-items:center;gap:6px}
 .land-leg-sw{width:11px;height:11px;flex:none;border:1px solid rgba(61,46,28,.4)}
 .land-leg-lbl{flex:1;color:var(--text)}
@@ -3753,21 +3756,32 @@ function landCompositionFigure(s, p){
     return `<span>${v>=1?v.toFixed(1):Math.round(v*10000)}</span>`;
   }).join("");
 
-  const legend = segs.map(x=>{
+  const leftSegs  = segs.filter(x => !x.perennial);
+  const perSeg     = segs.find(x => x.perennial);
+
+  const mkRow = (x) => {
     const pctv = b.total>0 ? Math.round(x.val/b.total*100) : 0;
-    const swatch = x.perennial
-      ? `<span class="land-leg-sw" style="background:${LAYER_COLORS_BAR.trees}"></span>`
-      : `<span class="land-leg-sw" style="background:${x.hatch?HATCH:x.color}"></span>`;
-    let rows = `<div class="land-leg-row">${swatch}<span class="land-leg-lbl">${x.label}</span><span class="land-leg-val">${fmtHa(x.val)}</span><span class="land-leg-pct">${pctv}%</span></div>`;
-    if(x.perennial && x.val > 0.00005){
-      rows += layerDefs.map(ld=>{
-        const ha = layers[ld.key] || 0;
+    const sw = `<span class="land-leg-sw" style="background:${x.hatch?HATCH:x.color}"></span>`;
+    return `<div class="land-leg-row">${sw}<span class="land-leg-lbl">${x.label}</span><span class="land-leg-val">${fmtHa(x.val)}</span><span class="land-leg-pct">${pctv}%</span></div>`;
+  };
+
+  const leftHTML = leftSegs.map(mkRow).join('');
+
+  let rightHTML = '';
+  if(perSeg){
+    const pctv = b.total>0 ? Math.round(perSeg.val/b.total*100) : 0;
+    const sw = `<span class="land-leg-sw" style="background:${LAYER_COLORS_BAR.trees}"></span>`;
+    rightHTML = `<div class="land-leg-row">${sw}<span class="land-leg-lbl">${perSeg.label}</span><span class="land-leg-val">${fmtHa(perSeg.val)}</span><span class="land-leg-pct">${pctv}%</span></div>`;
+    if(perSeg.val > 0.00005){
+      rightHTML += layerDefs.map(ld=>{
+        const ha = layers[ld.key]||0;
         if(ha < 0.00005) return '';
         return `<div class="land-leg-sub"><span class="land-leg-sw" style="background:${ld.color}"></span><span class="land-leg-lbl">${ld.label}</span><span class="land-leg-val">${fmtHa(ha)}</span></div>`;
       }).join('');
     }
-    return rows;
-  }).join("");
+  }
+
+  const legend = `<div class="land-leg-left">${leftHTML}</div><div class="land-leg-right">${rightHTML}</div>`;
 
   return `<div class="land-fig">
     <div class="land-fig-bar">${barSegs||'<div style="width:100%;background:'+HATCH+'"></div>'}</div>
@@ -3868,7 +3882,11 @@ const STARCHY_OVERRIDES = new Set([
   "Cassava","Taro","Yam","Arrowroot","Chestnut","Breadfruit","Artichoke (Jerusalem)",
 ]);
 
+// Vegetable overrides — crops whose crops.json food_group is wrong or ambiguous
+const VEG_OVERRIDES = new Set(["Olive (Table)"]);
+
 function effectiveFoodGroup(crop){
+  if(VEG_OVERRIDES.has(crop.name)) return "Vegetables & Legumes";
   if(STARCHY_OVERRIDES.has(crop.name)) return "Starches";
   if(crop.food_group==="Starches") return "Starches";
   if(crop.food_group==="Grain (Cereal) Foods") return "Starches";
@@ -4843,6 +4861,7 @@ function renderStep4(){
                 </div>
               </div>
               <p class="card-desc" style="margin-top:8px">Daily serves achieved as a share of household ADG targets, by food group.</p>
+              ${coverageAlert}${dairyAlert}
             </fieldset>
             <fieldset class="sci-fig">
               <legend>Land Allocation</legend>
@@ -4898,7 +4917,7 @@ function renderStep4(){
               `LP status: ${li.status}`
           }
           ${li.nutrientsUnderSupplied && li.nutrientsUnderSupplied.length ?
-            `<br><span style="font-size:13px">Still below 85% of NRV: ${li.nutrientsUnderSupplied.map(u => `<strong>${u.name}</strong> (${u.pct}%)`).join(", ")}</span>` : ""}
+            `<br><span style="font-size:11px">Still below 85% of NRV: ${li.nutrientsUnderSupplied.map(u => `<strong>${u.name}</strong> (${u.pct}%)`).join(", ")}</span>` : ""}
           ${tierLine}
           ${monthlyGapsLine}
           <div style="font-size:11px;margin-top:6px;color:var(--text-mid);font-style:italic">Dietary realism caps active: crops grouped by scientific name (cultivars of same species summed) and livestock outputs each limited to 2 serves/person/day or 50% of food-group target, whichever is smaller.</div>
@@ -5461,6 +5480,11 @@ function renderStep5(){
   const stickyBudgets = `
     <div class="adj-sticky">
       ${compactBudgetStrip(state, p)}
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 0 0 0">
+        <span style="font-size:11px;color:var(--green-dk);font-weight:700;white-space:nowrap;flex-shrink:0">＋ add to plan</span>
+        <input placeholder="Search crops &amp; livestock to add…" value="${state.adjustSearch||""}" oninput="setAdjustSearch(this.value)"
+          style="flex:1;padding:3px 8px;border:1px solid;border-color:var(--dark) var(--hl) var(--hl) var(--dark);background:var(--field);font-size:12px;font-family:inherit;box-shadow:inset 1px 1px 0 var(--shadow)"/>
+      </div>
     </div>`;
 
   // ── Crops list (left column) ──
@@ -5521,7 +5545,7 @@ function renderStep5(){
     const outTags = ls.outputs.map(out => {
       const spd = lsServesPerDay(out, count);
       const spdLbl = spd >= 1 ? spd.toFixed(1) : spd.toFixed(2);
-      const cls = out.food_group === "Dairy" ? "dairy-tag" : out.food_group === "Discretionary" ? "disc-tag" : "";
+      const cls = out.food_group === "Dairy" ? "dairy-tag" : out.food_group === "Discretionary" ? "disc-tag" : out.food_group === "Oils & Fats" ? "oils-tag" : "";
       return `<span class="ls-output-tag ${cls}" style="font-size:10px">${spdLbl} srv/day ${out.name}</span>`;
     }).join("");
     const spaceM2 = ls.space_m2_per_animal * count;
@@ -5696,10 +5720,6 @@ function renderStep5(){
         <div class="adj-hero">
           <div class="adj-hero-head">
             <h2>Crops in plan</h2><span class="cnt">(${p.selected.length})</span>
-            <div class="adj-hero-search">
-              <span style="font-size:11px;color:var(--green-dk);font-weight:700">＋ add</span>
-              <input placeholder="Search crops & livestock…" value="${state.adjustSearch||""}" oninput="setAdjustSearch(this.value)"/>
-            </div>
           </div>
           <div class="adj-hero-body">
             <div id="adjustSearchResult">${renderAdjustSearchResult()}</div>
