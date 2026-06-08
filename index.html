@@ -1809,7 +1809,7 @@ let state={
   step:0,
   selectedMonth: null,  // null | "jan" | "feb" | ...
   dbSearch: "",
-  dbView: "cards",   // "cards" | "table" | "compact"
+  dbView: "compact",   // "compact" | "detailed"
   dbFilter: "all",   // "all" | food group key
   dbSort: "name",    // "name" | "yield" | "labour"
   dbShowLivestock: false,
@@ -6327,14 +6327,20 @@ function renderStepDB(){
   });
 
   const totalFiltered = crops.length;
-  const view = state.dbView || "cards";
+  const view = state.dbView || "compact";
 
   // ── Toolbar ───────────────────────────────────────────────────────────────
-  const filterChips = Object.entries(FG_KEYS).map(([k,lbl]) =>
-    `<button class="filter-chip ${state.dbFilter===k?'active':''}" onclick="dbSetFilter('${k}')">${lbl}</button>`
-  ).join("");
+  const filterSel = `<select class="cropq-sel" onchange="dbSetFilter(this.value)" style="min-width:140px">
+    <option value="all" ${(state.dbFilter||"all")==="all"?"selected":""}>All crops</option>
+    <option value="veg" ${state.dbFilter==="veg"?"selected":""}>Vegetables</option>
+    <option value="fruit" ${state.dbFilter==="fruit"?"selected":""}>Fruit</option>
+    <option value="starchy" ${state.dbFilter==="starchy"?"selected":""}>Starches</option>
+    <option value="protein" ${state.dbFilter==="protein"?"selected":""}>Protein</option>
+    <option value="perennial" ${state.dbFilter==="perennial"?"selected":""}>Perennial</option>
+    <option value="annual" ${state.dbFilter==="annual"?"selected":""}>Annual</option>
+  </select>`;
 
-  const viewBtns = [["cards","⊞ Cards"],["compact","≡ Compact"],["table","⊟ Table"]].map(([v,lbl]) =>
+  const viewBtns = [["compact","≡ Compact"],["detailed","⊟ Detailed"]].map(([v,lbl]) =>
     `<button class="db-view-btn ${view===v?'active':''}" onclick="dbSetView('${v}')">${lbl}</button>`
   ).join("");
 
@@ -6357,66 +6363,38 @@ function renderStepDB(){
     }).join("");
   }
 
-  // ── CARDS view ────────────────────────────────────────────────────────────
-  let body = "";
-  if(view === "cards"){
-    const cards = crops.map(c => {
-      const yieldStr = (c.yield_low||0) === (c.yield_high||0)
-        ? `${c.yield_low} t/ha`
-        : `${c.yield_low}–${c.yield_high} t/ha`;
-      const zones = (c.cliz||[]).join(", ");
-      const typeTag = c.perennial
-        ? `<span class="tag" style="background:#EDE3CB;font-size:9px">Perennial</span>`
-        : `<span class="tag" style="background:#E4EED4;font-size:9px">Annual</span>`;
-      const cLatin = c.latin || CROP_LATIN[c.name] || "";
-      return `<div class="db-card">
-        <div class="db-card-name">${c.name}</div>
-        ${cLatin?`<div class="db-card-latin">${cLatin}</div>`:""}
-        <div>${tag(effectiveFoodGroup(c))} ${typeTag}</div>
-        <div class="db-card-meta">
-          <strong>Edible:</strong> ${c.edible_part||"—"} &nbsp;·&nbsp; <strong>Serve:</strong> ${c.serve_g||"?"}g<br>
-          <strong>Yield:</strong> <span class="db-card-yield">${yieldStr}</span><br>
-          <strong>Labour:</strong> ${c.labour_hand||"?"} hrs/ha (hand) · ${c.labour_mech||"?"}  (mech)<br>
-          <strong>Climate:</strong> ${c.temp_opt_min||"?"}–${c.temp_opt_max||"?"}°C · ${c.rain_min||"?"}–${c.rain_max||"?"}mm<br>
-          <strong>pH:</strong> ${c.ph_min||"?"}–${c.ph_max||"?"}  &nbsp;·&nbsp; <strong>Zones:</strong> ${zones||"—"}${c.perennial?`<br><strong>Establishes:</strong> ${c.establishment_years||"?"}yr · <strong>Storage:</strong> ${c.storability||"—"}`:`<br><strong>Storage:</strong> ${c.storability||"—"}`}
-        </div>
-        <div class="db-card-months">${monthDots(c.months||{})}</div>
-        <div class="db-card-nut">${nutPills(c.nut)}</div>
-      </div>`;
-    }).join("");
-    body = `<div class="db-cards">${cards}</div>`;
-  }
-
   // ── COMPACT view ─────────────────────────────────────────────────────────
-  else if(view === "compact"){
+  let body = "";
+  if(view === "compact"){
     const hdr = `<div class="db-compact-row db-compact-hdr">
       <div onclick="dbSetSort('name')" style="cursor:pointer">Name ${(state.dbSort||"name")==="name"?"▴":(state.dbSort||"")==="name_desc"?"▾":""}</div>
       <div>Food group</div>
       <div onclick="dbSetSort('yield')" style="cursor:pointer">Yield ${(state.dbSort||"")==="yield"?"▴":state.dbSort==="yield_desc"?"▾":""}</div>
       <div onclick="dbSetSort('labour')" style="cursor:pointer">Labour</div>
       <div>Zones / Harvest</div>
-      <div>Storage</div>
+      <div>Soils</div>
     </div>`;
     const rows = crops.map(c => {
       const yieldStr = `${c.yield_low||"?"}–${c.yield_high||"?"} t/ha`;
       const harv = MONTHS.filter(m => c.months?.[m]==="P"||c.months?.[m]==="S")
         .map(m=>m.charAt(0).toUpperCase()+m.slice(1,3)).join(", ") || "—";
       const zones = (c.cliz||[]).slice(0,4).join(" ");
+      const soils = (c.text_tol||[]).join(" · ") || "—";
       return `<div class="db-compact-row">
         <div><strong>${c.name}</strong> ${c.perennial?'<span style="font-size:9px;color:#8B6914">·</span>':''}</div>
         <div style="color:var(--text-mid)">${c.food_group?.replace("Lean Meats, Eggs, Nuts, Seeds & Legumes","Protein").replace("Vegetables & Legumes","Veg").replace("Grain (Cereal) Foods","Starch")||"—"}</div>
         <div style="font-weight:600;color:var(--green-dk)">${yieldStr}</div>
         <div style="color:var(--text-mid)">${c.labour_hand||"?"}h/ha</div>
         <div style="font-size:10px;color:var(--text-mid)">${zones} · ${harv}</div>
-        <div style="font-size:10px;color:var(--text-mid)">${c.storability||"—"}</div>
+        <div style="font-size:10px;color:var(--text-mid)">${soils}</div>
       </div>`;
     }).join("");
     body = `<div class="db-compact">${hdr}${rows}</div>`;
   }
 
-  // ── TABLE view ───────────────────────────────────────────────────────────
+  // ── DETAILED view ─────────────────────────────────────────────────────────
   else {
-    const ths = ["Name","Edible","Food group","Yield low","Yield high","Labour (h)","Temp min","Temp max","Rain min","pH min","pH max","Perennial","Zones","Storage"].map(h =>
+    const ths = ["Name","Edible","Food group","Yield low","Yield high","Labour (h)","Zones","Soils","Temp min","Temp max","Rain min","pH min","pH max","Perennial","Storage"].map(h =>
       `<th>${h}</th>`).join("");
     const rows = crops.map(c => `<tr>
       <td><strong>${c.name}</strong></td>
@@ -6425,13 +6403,14 @@ function renderStepDB(){
       <td style="text-align:right">${c.yield_low||"—"}</td>
       <td style="text-align:right">${c.yield_high||"—"}</td>
       <td style="text-align:right">${c.labour_hand||"—"}</td>
+      <td style="font-size:10px">${(c.cliz||[]).join(" ")||"—"}</td>
+      <td style="font-size:10px">${(c.text_tol||[]).join(" · ")||"—"}</td>
       <td style="text-align:right">${c.temp_opt_min||"—"}</td>
       <td style="text-align:right">${c.temp_opt_max||"—"}</td>
       <td style="text-align:right">${c.rain_min||"—"}</td>
       <td style="text-align:right">${c.ph_min||"—"}</td>
       <td style="text-align:right">${c.ph_max||"—"}</td>
       <td>${c.perennial?"Yes":"No"}</td>
-      <td style="font-size:10px">${(c.cliz||[]).join(" ")}</td>
       <td style="font-size:10px">${c.storability||"—"}</td>
     </tr>`).join("");
     body = `<div style="overflow-x:auto"><table class="db-table"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -6479,7 +6458,7 @@ function renderStepDB(){
         <span class="db-count">${totalFiltered} / ${CROP_DATA.length} crops</span>
       </div>
       <div class="db-toolbar" style="margin-bottom:10px">
-        <div style="display:flex;gap:4px;flex-wrap:wrap">${filterChips}</div>
+        <label class="cropq-lbl">Food group</label>${filterSel}
         <div style="display:flex;gap:4px;margin-left:auto;flex-wrap:wrap">${sortBtns} &nbsp; ${viewBtns}</div>
       </div>
       ${body}
