@@ -6500,7 +6500,7 @@ function serializeSuccessionExport(){
     ? getAdjustedPlan() : (state.plan || getAdjustedPlan());
   const base = JSON.parse(decodeURIComponent(escape(atob(serializeState()))));
   base._type = "succession_export";
-  base._v = 1;
+  base._v = 2;
   base.planSnapshot = (p && p.selected || []).map(({crop, allocHa}) => ({
     name:      crop.name,
     allocHa:   Math.round(allocHa * 10000) / 10000,
@@ -6524,6 +6524,12 @@ function serializeSuccessionExport(){
     adg_serve_g: ls.adg_serve_g || 150,
     scalable: ["Chicken","Duck","Guinea Fowl","Quail","Fish","Yabby"].some(k => ls.name.includes(k)),
   }));
+  // Full annual crop objects so the succession planner can run the same algorithm
+  base.annualCrops = (CROP_DATA || []).filter(c =>
+    !c.perennial &&
+    isSuitable(c) &&
+    state.checkedCrops && state.checkedCrops.has(c.name)
+  );
   try { return btoa(unescape(encodeURIComponent(JSON.stringify(base)))); }
   catch(e){ return ""; }
 }
