@@ -4017,8 +4017,8 @@ function isSuitable(crop){
 
 // Classify annual crops into harvest season groups
 // WARM = Nov–Apr (summer harvest)  COOL = May–Oct (winter harvest)  YEARROUND = bimodal/succession
-const WARM_M=["nov","dec","jan","feb","mar"];
-const COOL_M=["apr","may","jun","jul","aug","sep","oct"];
+const WARM_M=["jan","feb","mar","apr"];
+const COOL_M=["may","jun","jul","aug","sep","oct","nov","dec"];
 // These salad/herb crops are genuinely succession-planted across both seasons
 const YEARROUND_CROPS=new Set(["Lettuce (Cos)","Lettuce (Iceberg)","Rocket (Arugula)","Parsley","Parsley (Curly)","Dill","Onion (Spring)"]);
 
@@ -4026,7 +4026,7 @@ function cropSeasonGroup(crop){
   if(YEARROUND_CROPS.has(crop.name)) return "yearround";
   const wScore=WARM_M.reduce((s,m)=>s+(crop.months[m]==="S"?2:crop.months[m]==="P"?1:0),0);
   const cScore=COOL_M.reduce((s,m)=>s+(crop.months[m]==="P"?2:crop.months[m]==="S"?1:0),0);
-  return wScore>=cScore?"warm":"cool";
+  return wScore>cScore?"warm":"cool";
 }
 
 function plantCount(crop, allocHa){
