@@ -1368,12 +1368,47 @@ const ZONES = [
 
 const MONTHS=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 const MONTH_INITIALS=["J","F","M","A","M","J","J","A","S","O","N","D"];
+// ── 13-group dietary taxonomy ────────────────────────────────────────────────
+// Internal keys (replaces the old 6-group veg/fruit/starchy/protein/dairy/oils).
+const FG_KEYS=["darkgreen","redorange","othervet","tubers","fruit","grain",
+               "legumes","nutsseeds","eggs","meat","dairy","herbs","discretionary"];
+// Groups with a household quantity floor (actually fed). herbs/discretionary = no floor.
+const FLOOR_KEYS=["darkgreen","redorange","othervet","tubers","fruit","grain",
+                  "legumes","nutsseeds","eggs","meat","dairy"];
+// Plant-fresh groups that need monthly fresh-supply coverage. Mirrors the original
+// veg+fruit-only rule: the perishable groups. Storable staples (grain, tubers, legumes,
+// nuts & seeds) are exempt; herbs are fresh-harvest so included.
+const PLANT_FRESH_KEYS=["darkgreen","redorange","othervet","fruit","herbs"];
+function zeroFG(){ const o={}; FG_KEYS.forEach(k=>o[k]=0); return o; }
+// Split the legacy ADG 6-value serves ({veg,fruit,starchy,protein,dairy,oils}) across 13 keys,
+// preserving total serving quantity. Ratios are sensible defaults (refine later if desired).
+function splitADG(a){
+  const veg=a.veg||0, fruit=a.fruit||0, starchy=a.starchy||0, protein=a.protein||0, dairy=a.dairy||0;
+  return {
+    darkgreen:   veg/3,
+    redorange:   veg/3,
+    othervet:    veg/3,
+    tubers:      starchy*0.4,
+    grain:       starchy*0.6,
+    fruit:       fruit,
+    legumes:     protein*0.3,
+    nutsseeds:   protein*0.2,
+    eggs:        protein*0.1,
+    meat:        protein*0.4,
+    dairy:       dairy,
+    herbs:       0,
+    discretionary: 0,
+  };
+}
 const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
 const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
-const FG_TAG={"Vegetables & Legumes":"tag-veg","Fruit":"tag-fruit","Starches":"tag-starch","Lean Meats, Eggs, Nuts, Seeds & Legumes":"tag-protein","Dairy":"tag-dairy","Discretionary":"tag-disc","Oils & Fats":"tag-oils","Herbs":"tag-herbs"};
-const FG_SHORT={"Vegetables & Legumes":"Veg","Fruit":"Fruit","Starches":"Starch","Lean Meats, Eggs, Nuts, Seeds & Legumes":"Protein","Dairy":"Dairy","Discretionary":"Disc","Oils & Fats":"Oils","Herbs":"Herb"};
-const FG_GROUPS=["Vegetables & Legumes","Fruit","Starches","Lean Meats, Eggs, Nuts, Seeds & Legumes","Oils & Fats"];
-const FG_KEY={"Vegetables & Legumes":"veg","Fruit":"fruit","Starches":"starchy","Lean Meats, Eggs, Nuts, Seeds & Legumes":"protein","Oils & Fats":"oils"};
+// Food-group display tag classes, keyed by the crops.json food_group strings (13-group taxonomy).
+const FG_TAG={"Dark Green Vegetables":"tag-veg","Red/Orange Vegetables":"tag-veg","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
+const FG_SHORT={"Dark Green Vegetables":"Greens","Red/Orange Vegetables":"Red/Org","Other Vegetables":"Veg","Tubers":"Tubers","Fruit":"Fruit","Grain (Cereal) Foods":"Grain","Legumes":"Legumes","Nuts & Seeds":"Nuts","Eggs":"Eggs","Meat":"Meat","Dairy":"Dairy","Herbs":"Herb","Discretionary":"Disc"};
+// Floored groups iterated in greedy phase-1, as crops.json food_group strings (order = allocation priority).
+const FG_GROUPS=["Dark Green Vegetables","Red/Orange Vegetables","Other Vegetables","Tubers","Fruit","Grain (Cereal) Foods","Legumes","Nuts & Seeds","Eggs","Meat","Dairy"];
+// food_group string → internal key (13-group). Keep in sync with fgToKey().
+const FG_KEY={"Dark Green Vegetables":"darkgreen","Red/Orange Vegetables":"redorange","Other Vegetables":"othervet","Tubers":"tubers","Fruit":"fruit","Grain (Cereal) Foods":"grain","Legumes":"legumes","Nuts & Seeds":"nutsseeds","Eggs":"eggs","Meat":"meat","Dairy":"dairy","Herbs":"herbs","Discretionary":"discretionary"};
 const SOIL_PH={sand_low:5.5,sand_medium:6.0,sand_high:6.5,loam_low:5.8,loam_medium:6.5,loam_high:7.0,clay_low:6.0,clay_medium:6.8,clay_high:7.5};
 
 // ── Preparation requirements lookup ──────────────────────────────────────────
@@ -1849,7 +1884,7 @@ let state={
   cropSearch:"",
   plan:null,
   // food group minimum % constraints (apply to both quick plan and pareto)
-  foodGroupMin:{veg:0, fruit:0, starchy:0, protein:0, oils:0},
+  foodGroupMin:(function(){const o={};["darkgreen","redorange","othervet","tubers","fruit","grain","legumes","nutsseeds","eggs","meat","dairy"].forEach(k=>o[k]=0);return o;})(),
   // pareto explorer
   planMode:"quick",
   paretoObj1:"yield",
@@ -1907,8 +1942,8 @@ function cropScore(crop, fertility, confidence, zone, objectives){
 }
 
 function calcTotals(household){
-  let t={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0};
-  household.forEach(m=>{const a=ADG[m.type];if(a){t.veg+=a.veg;t.fruit+=a.fruit;t.starchy+=a.starchy;t.protein+=a.protein;t.dairy+=a.dairy;t.oils+=(a.oils||0);}});
+  const t=zeroFG();
+  household.forEach(m=>{const a=ADG[m.type];if(a){const s=splitADG(a);FG_KEYS.forEach(k=>{t[k]+=s[k]||0;});}});
   return t;
 }
 
@@ -1988,12 +2023,9 @@ function nutritionalYield(plan, fertility, confidence){
   // Use plan.lsSelected (algorithm + adjust overrides) not state.livestock directly
   const lsEntries = plan.lsSelected || [];
   lsEntries.forEach(({ls, count}) => {
-    ls.outputs.forEach(out => {
-      if(!out.nut) return;
-      const annualG = out.unit === "eggs"
-        ? count * out.qty_per_animal_yr * (out.serve_g || 55)
-        : count * out.qty_per_animal_yr;
-      Object.entries(out.nut).forEach(([nutrient, per100g]) => {
+    lsNutContributions(ls).forEach(c => {
+      const annualG = count * c.qty_per_animal_yr;
+      Object.entries(c.nut).forEach(([nutrient, per100g]) => {
         totals[nutrient] = (totals[nutrient]||0) + annualG * per100g / 100;
       });
     });
@@ -2152,15 +2184,22 @@ function cropPriorityTier(crop){
 function fgToKey(fg){
   if(!fg) return null;
   const f = fg.toLowerCase();
-  // Oils & Fats must be checked before protein — "seed" appears in oil seeds
-  if(f.includes('oil') || (f.includes('fat') && !f.includes('protein'))) return 'oils';
-  // Protein MUST come before veg — "Lean Meats, Eggs, Nuts, Seeds & Legumes" contains
-  // "legume" but should map to protein, not veg.
-  if(f.includes('meat') || f.includes('egg') || f.includes('nut') || f.includes('seed')) return 'protein';
+  // Specific veg sub-groups MUST be checked before the generic "vegetable" → othervet.
+  if(f.includes('dark green')) return 'darkgreen';
+  if(f.includes('red/orange') || f.includes('red-orange') || f.includes('red orange')) return 'redorange';
+  if(f.includes('tuber')) return 'tubers';
+  // Grain before nuts/seeds (no overlap, but explicit) and before generic veg.
+  if(f.includes('grain') || f.includes('cereal')) return 'grain';
+  if(f.includes('legume')) return 'legumes';
+  if(f.includes('nut') || f.includes('seed')) return 'nutsseeds';
+  if(f.includes('egg')) return 'eggs';
+  if(f.includes('meat')) return 'meat';
   if(f.includes('dairy')) return 'dairy';
-  if(f.includes('vegetable') || f.includes('legume')) return 'veg';
+  if(f.includes('herb')) return 'herbs';
+  if(f.includes('discretionary')) return 'discretionary';
   if(f.includes('fruit')) return 'fruit';
-  if(f.includes('grain') || f.includes('cereal')) return 'starchy';
+  // Generic vegetable falls through to "other vegetables".
+  if(f.includes('vegetable')) return 'othervet';
   return null;
 }
 
@@ -2184,26 +2223,35 @@ function getCropSeason(crop){
   return ws > cs ? "warm" : "cool"; // default to cool if equal or no data
 }
 
-function lsServesPerDay(out, count){
+// Serves per day for the MAIN food-group contribution of one livestock species × count.
+// Flat crops.json shape: qty_per_animal_yr already in grams (or mL). serve_g converts to serves.
+// Byproducts (tallow/lard, food_group:null) contribute fat to NRV only — never serves.
+function lsServesPerDay(ls, count){
   if(!count || count <= 0) return 0;
-  // qty_per_animal_yr is in out.unit (g, mL, eggs)
-  // serve_g converts to serves
-  const totalGPerYr = out.unit === "eggs"
-    ? count * out.qty_per_animal_yr * (out.serve_g || 55)  // eggs → grams
-    : count * out.qty_per_animal_yr;                         // already in g or mL
-  return (totalGPerYr / (out.serve_g || 100)) / 365;
+  if(!ls || !ls.qty_per_animal_yr || !ls.food_group) return 0;
+  const totalGPerYr = count * ls.qty_per_animal_yr;   // already g or mL
+  return (totalGPerYr / (ls.serve_g || 100)) / 365;
 }
 
-// Total livestock nutrition contributions — {veg,fruit,starchy,protein,dairy}
+// Every nutrient-bearing contribution (main food group + byproducts) for NRV accumulation.
+// Each entry: { nut, qty_per_animal_yr } — annual grams per animal.
+function lsNutContributions(ls){
+  const out = [];
+  if(ls.nut && ls.qty_per_animal_yr) out.push({ nut: ls.nut, qty_per_animal_yr: ls.qty_per_animal_yr });
+  (ls.byproducts||[]).forEach(bp => {
+    if(bp.nut && bp.qty_per_animal_yr) out.push({ nut: bp.nut, qty_per_animal_yr: bp.qty_per_animal_yr });
+  });
+  return out;
+}
+
+// Total livestock food-group serves/day, keyed by the 13-group taxonomy.
 function calcLivestockAchieved(lsArr){
-  const result = {veg:0, fruit:0, starchy:0, protein:0, dairy:0, oils:0};
+  const result = zeroFG();
   const entries = lsArr || LIVESTOCK_DATA.filter(ls => (state.livestock||{})[ls.name] > 0).map(ls => ({ls, count:(state.livestock||{})[ls.name]}));
   entries.forEach(({ls, count}) => {
-    ls.outputs.forEach(out => {
-      const spd = lsServesPerDay(out, count);
-      const key = fgToKey(out.food_group);
-      if(key && result[key] !== undefined) result[key] += spd;
-    });
+    const spd = lsServesPerDay(ls, count);
+    const key = fgToKey(ls.food_group);
+    if(key && result[key] !== undefined) result[key] += spd;
   });
   return result;
 }
@@ -2258,11 +2306,9 @@ function toggleLivestock(name, checked){
 // Human-readable output summary for one livestock entry
 function lsOutputSummary(ls, count){
   if(!count) return "—";
-  return ls.outputs.map(out => {
-    const spd = lsServesPerDay(out, count);
-    const label = spd >= 1 ? spd.toFixed(1) : spd.toFixed(2);
-    return `${label} srv/day ${out.name}`;
-  }).join(" · ");
+  const spd = lsServesPerDay(ls, count);
+  const label = spd >= 1 ? spd.toFixed(1) : spd.toFixed(2);
+  return `${label} srv/day ${ls.edible_part || ls.name}`;
 }
 
 
@@ -2301,8 +2347,8 @@ function generatePlan(s){
   let usedCanopyHa = 0, usedTreesHa = 0, usedPerennialPlantsHa = 0;
   const usedAnnualHa = () => usedCoolHa + usedWarmHa; // total across both seasons
   const perennialFootprint = () => Math.max(usedCanopyHa, usedTreesHa, usedPerennialPlantsHa);
-  const achieved={veg:0, fruit:0, starchy:0, protein:0, dairy:0, oils:0};
-  const monthCoverage={}; MONTHS.forEach(m => monthCoverage[m]={veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0});
+  const achieved=zeroFG();
+  const monthCoverage={}; MONTHS.forEach(m => monthCoverage[m]=zeroFG());
   const selected=[];
   const lsSelected = [];
   let usedPastureHa = 0;
@@ -2312,16 +2358,14 @@ function generatePlan(s){
   const lsCandidates = [];
   LIVESTOCK_DATA.forEach(ls => {
     if(!checkedLs.has(ls.name)) return;
-    ls.outputs.forEach(out => {
-      const key = fgToKey(out.food_group);
-      if(!key) return;
-      const servesPerStep = lsServesPerDay(out, ls.step);
-      const labourPerStep = (ls.labour_hrs_per_animal || 0) * ls.step;
-      const spaceHaPerStep = ls.space_m2_per_animal * ls.step / 10000;
-      lsCandidates.push({ls, out, key, servesPerStep, labourPerStep, spaceHaPerStep,
-        usedCount: 0,
-        score: labourPerStep > 0 ? (servesPerStep * 365) / labourPerStep : servesPerStep * 999
-      });
+    const key = fgToKey(ls.food_group);
+    if(!key) return;
+    const servesPerStep = lsServesPerDay(ls, ls.step);
+    const labourPerStep = (ls.labour_hrs_per_animal || 0) * ls.step;
+    const spaceHaPerStep = ls.space_m2_per_animal * ls.step / 10000;
+    lsCandidates.push({ls, key, servesPerStep, labourPerStep, spaceHaPerStep,
+      usedCount: 0,
+      score: labourPerStep > 0 ? (servesPerStep * 365) / labourPerStep : servesPerStep * 999
     });
   });
 
@@ -2342,14 +2386,12 @@ function generatePlan(s){
     } else {
       usedPastureHa += lsCand.ls.space_m2_per_animal * count / 10000;
     }
-    lsCand.ls.outputs.forEach(out2 => {
-      const spd = lsServesPerDay(out2, count);
-      const k2 = fgToKey(out2.food_group);
-      if(k2 && achieved[k2] !== undefined){
-        achieved[k2] += spd;
-        MONTHS.forEach(m => { if(monthCoverage[m][k2] !== undefined) monthCoverage[m][k2] += spd; });
-      }
-    });
+    const spd = lsServesPerDay(lsCand.ls, count);
+    const k2 = fgToKey(lsCand.ls.food_group);
+    if(k2 && achieved[k2] !== undefined){
+      achieved[k2] += spd;
+      MONTHS.forEach(m => { if(monthCoverage[m][k2] !== undefined) monthCoverage[m][k2] += spd; });
+    }
     const ex = lsSelected.find(e => e.ls.name === lsCand.ls.name);
     if(ex) ex.count += count; else lsSelected.push({ls: lsCand.ls, count});
   }
@@ -2465,7 +2507,7 @@ function generatePlan(s){
     const key = isDairy ? 'dairy' : FG_KEY[fg];
     const targetServes = isDairy ? (targets.dairy||0) : (targets[key]||0);
     if(targetServes <= 0) return;
-    const isFresh = (key === "veg" || key === "fruit");
+    const isFresh = PLANT_FRESH_KEYS.includes(key);
     // Fresh crops always use tight cap for seasonal variety.
     // Non-fresh: minimiseLabour/Space use a larger cap so one efficient crop
     // can dominate the allocation, reducing total crop count.
@@ -2524,7 +2566,7 @@ function generatePlan(s){
         // Assign primary and secondary keys by mode
         // For fresh crops: gap-fill is always primary (seasonal variety preserved)
         let primary, secondary;
-        if(key === 'starchy'){
+        if(key === 'grain' || key === 'tubers'){
           primary   = netGap;
           secondary = cand.adjYield * 1e6 / (cand.crop.serve_g || 75)
                                          / (cand.crop.labour_hand || 1);
@@ -2558,7 +2600,7 @@ function generatePlan(s){
           if(lc.labourPerStep > labL + 0.1) continue;
           const poolLeft = AQUATIC_LIVESTOCK.has(lc.ls.name) ? swL : pasL;
           if(lc.spaceHaPerStep > poolLeft + 0.0001) continue;
-          if(lsServesPerDay(lc.out, lc.usedCount) >= targetServes * 0.50) continue;
+          if(lsServesPerDay(lc.ls, lc.usedCount) >= targetServes * 0.50) continue;
           if(lc.score > bestLsEff){ bestLsEff = lc.score; bestLs = lc; }
         }
       }
@@ -2574,7 +2616,7 @@ function generatePlan(s){
           : (s.pastureHa||0) - usedPastureHa;
         const maxByLab = bestLs.labourPerStep > 0 ? Math.floor(labL2 / bestLs.labourPerStep) : 99;
         const maxByPas = bestLs.spaceHaPerStep > 0 ? Math.floor((pasL2+0.0001) / bestLs.spaceHaPerStep) : 99;
-        const capServes = targetServes * 0.50 - lsServesPerDay(bestLs.out, bestLs.usedCount);
+        const capServes = targetServes * 0.50 - lsServesPerDay(bestLs.ls, bestLs.usedCount);
         const maxByCap = bestLs.servesPerStep > 0 ? Math.ceil(capServes / bestLs.servesPerStep) : 1;
         const gapSteps = bestLs.servesPerStep > 0 ? Math.max(1, Math.ceil((targetServes - achieved[key]) / bestLs.servesPerStep)) : 1;
         const nSteps = Math.min(gapSteps, maxByCap, maxByLab, maxByPas, 5);
@@ -2645,12 +2687,9 @@ function generatePlan(s){
       });
     });
     lsSelected.forEach(({ls, count}) => {
-      ls.outputs.forEach(out => {
-        if(!out.nut) return;
-        const annualG = out.unit === "eggs"
-          ? count * out.qty_per_animal_yr * (out.serve_g||55)
-          : count * out.qty_per_animal_yr;
-        Object.entries(out.nut).forEach(([k, per100g]) => {
+      lsNutContributions(ls).forEach(c => {
+        const annualG = count * c.qty_per_animal_yr;
+        Object.entries(c.nut).forEach(([k, per100g]) => {
           nutAccum[k] = (nutAccum[k]||0) + annualG * per100g / 100 / 365;
         });
       });
@@ -2728,7 +2767,7 @@ function generatePlan(s){
         if(lph15 > 0) ha15 = Math.min(ha15, labLeft15 / lph15);
         if(ha15 < 0.002){ p15Handled.add(gapKey); continue; }
 
-        const fgKey15 = FG_KEY[effectiveFoodGroup(top.crop)] || 'veg';
+        const fgKey15 = FG_KEY[effectiveFoodGroup(top.crop)] || 'othervet';
         addAllocation(top.crop, ha15, fgKey15);
         p15AllocNames.add(top.crop.name);
         p15Count++;
@@ -2982,13 +3021,13 @@ function lpSolveBigM(problem){
 // ── Tracked nutrients for LP (skip ones plants can't supply or that aren't gated) ─
 const LP_TRACKED_NUTRIENTS = ["kcal","protein","fiber","ca","fe","mg","zn",
                               "vitA","vitC","vitE","b1","b2","b3","b6","folate"];
-const LP_FOOD_GROUPS = ["veg","fruit","starchy","protein","oils"];
+const LP_FOOD_GROUPS = FLOOR_KEYS.slice();
 
 // ── LP-driven plan generator ───────────────────────────────────────────────
 // ── LP tier labels ────────────────────────────────────────────────────────
 const LP_TIER_LABELS = { 4: "Ideal", 3: "Good", 2: "Marginal", 1: "Possible" };
 // Food groups that need monthly fresh-supply constraints (storable groups exempt)
-const LP_FRESH_GROUPS = ["veg", "fruit"];
+const LP_FRESH_GROUPS = PLANT_FRESH_KEYS.slice();
 
 // ── Inner LP setup + solve ─────────────────────────────────────────────────
 // Builds the LP for a specific candidate pool (used by generatePlanLP's
@@ -3087,12 +3126,9 @@ function solveLpForCandidates(s, candidates, lsList, annualNRV, annualServes, ta
       });
       lsList.forEach((ls,j) => {
         let total = 0;
-        ls.outputs.forEach(out => {
-          if(!out.nut || !out.nut[n]) return;
-          const annualG = out.unit === "eggs"
-            ? out.qty_per_animal_yr * (out.serve_g||55)
-            : out.qty_per_animal_yr;
-          total += annualG * out.nut[n] / 100;
+        lsNutContributions(ls).forEach(c => {
+          if(!c.nut || !c.nut[n]) return;
+          total += c.qty_per_animal_yr * c.nut[n] / 100;
         });
         r[ix.ls(j)] = total / NRV;
       });
