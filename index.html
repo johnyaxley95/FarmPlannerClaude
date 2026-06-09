@@ -1401,6 +1401,13 @@ const FG_DISPLAY = {
 };
 // Floored groups only, for display rows that should skip herbs/discretionary unless present.
 const FG_DISPLAY_ROWS = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].tag]);
+// Per-crop IN-SEASON daily-rate cap, in serves per person, applied while a crop is
+// supplying (harvest + storage window). null = no cap. Set per group to limit how much
+// any single crop can dominate its active season — forcing more crops in for diversity.
+// Trialled on fruit; add other keys here to extend.
+const FG_INSEASON_CAP_PER_PERSON = {
+  fruit: 1,
+};
 // Split the legacy ADG 6-value serves ({veg,fruit,starchy,protein,dairy,oils}) across 13 keys,
 // preserving total serving quantity. Ratios are sensible defaults (refine later if desired).
 function splitADG(a){
@@ -2623,7 +2630,16 @@ function generatePlan(s){
         const sup = cropSupplyMonths(best.crop);
         const covFrac = Math.min(1, (sup.coveredCount||0) / 12);
         if(covFrac <= 0) continue;
-        const wantServes = sufficient ? remaining * 0.10 : Math.min(remaining, targetServes * covFrac);
+        let wantServes = sufficient ? remaining * 0.10 : Math.min(remaining, targetServes * covFrac);
+        // Per-group in-season cap: limit this crop's serves/day WHILE SUPPLYING to
+        // capPerPerson × household. In annual-average terms that's the cap × covFrac
+        // (rate × fraction-of-year). Forces more crops in rather than one dominating its season.
+        const capPP = FG_INSEASON_CAP_PER_PERSON[key];
+        if(capPP != null){
+          const hh = (s.household || []).length || 1;
+          const maxWant = capPP * hh * covFrac;
+          if(wantServes > maxWant) wantServes = maxWant;
+        }
         if(wantServes <= 0.01) continue;
         const areaNeeded = areaForServes(best.crop, wantServes, s.fertility, s.confidence);
         if(!areaNeeded || areaNeeded <= 0) continue;
