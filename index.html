@@ -1793,7 +1793,7 @@ let state={
   paretoSelected:null,
   paretoRunning:false,
   // livestock
-  pastureHa: 0.0,           // grazing / foraging area for terrestrial livestock
+  pastureHa: 0.05,          // grazing / foraging area for terrestrial livestock
   surfaceWaterHa: 0.0,       // pond / tank / flooded area — aquaculture + aquatic crops
   landFixed: false,          // true = respect annual/perennial split; false = fluid total pool
   hasIrrigation: false,      // true = rainfall min constraints are softened in suitability
@@ -2503,7 +2503,11 @@ function generatePlan(s){
       const seasonallyEven = !isFresh || worstMonthCov >= 0.5;
       const gluttingHard = isFresh && peakMonthCov > 2.0;  // peak > 200% = stop
       if(sufficient && (seasonallyEven || objMode === "minimiseSpace")) break;
-      if(overPlanted || gluttingHard) break;  // hard caps
+      // Annual overplant cap: only stop early if there's no meaningful seasonal gap left.
+      // A glutted summer shouldn't block recruiting winter crops for an empty month — so
+      // while worstMonthCov is low, keep going even past the annual 130% mark.
+      const hasMonthGap = isFresh && worstMonthCov < 0.5;
+      if((overPlanted || gluttingHard) && !hasMonthGap) break;  // hard caps
 
       // ── Best crop candidate ────────────────────────────────────────────────
       // 3-key comparator: tier (hard gate) → primary key → secondary key
@@ -2513,21 +2517,31 @@ function generatePlan(s){
       //   minimiseSpace:  modeScore (serves/m2)        → gap-fill
       //   maximiseYield:  modeScore (yield t/ha)       → gap-fill
       let best = null;
-      let bestTier = -1, bestPrimary = -Infinity, bestSecondary = -Infinity;
+      let bestTier = -1, bestPrimary = -Infinity, bestSecondary = -Infinity, bestGapMode = false;
 
       for(const cand of fgCandidates){
         if(usedNames.has(cand.crop.name)) continue;
         let gapFillScore = 0, glutPenalty = 0;
         if(isFresh){
-          MONTHS.forEach(m => {
-            const v = cand.crop.months[m];
-            const w = v === "P" ? 1 : v === "S" ? 0.5 : 0;
-            if(w === 0) return;
+          // Use the crop's full supply window (harvest months + cool-store bridge), so a
+          // crop that stores into an empty month is credited for filling it. Empty months
+          // (coverage well below target) are weighted heavily so a crop that uniquely
+          // covers a gap wins even if its other months overlap a glut.
+          const supC = cropSupplyMonths(cand.crop);
+          MONTHS.forEach((m, mi) => {
+            const w = supC.months[mi];
+            if(w <= 0.001) return;
             const cov = (monthCoverage[m][key] || 0) / targetServes;
-            if(cov < 1.0) gapFillScore += (1.0 - cov) * w;
-            else glutPenalty += (cov - 1.0) * w * 1.0;
+            if(cov < 1.0){
+              // Heavier reward the emptier the month is (quadratic emphasis on true gaps).
+              const deficit = 1.0 - cov;
+              gapFillScore += deficit * (1 + deficit) * w;
+            } else {
+              glutPenalty += (cov - 1.0) * w * 0.5;  // softer glut penalty
+            }
           });
-          if(sufficient && (gapFillScore - glutPenalty) <= 0.1) continue;
+          // Only skip a candidate when sufficient AND it adds essentially no gap coverage.
+          if(sufficient && gapFillScore <= 0.05) continue;
         }
         const netGap = gapFillScore - glutPenalty;
 
@@ -2546,8 +2560,16 @@ function generatePlan(s){
           secondary = netGap;
         }
 
-        const tierWins  = cand.tier > bestTier;
-        const tierTies  = cand.tier === bestTier;
+        // Tier is normally a hard gate (prefer staple/reliable crops first). But for a
+        // fresh group with a real seasonal gap, a crop that fills an empty month should
+        // win even if it's a lower tier — otherwise high-tier crops glut one season and
+        // the gap never gets filled. So when filling a gap, tier becomes a tiebreaker.
+        const gapMode = isFresh && worstMonthCov < 0.5 && gapFillScore > 0.05;
+        const effTier = gapMode ? 0 : cand.tier;
+        const cmpBestTier = gapMode ? (bestGapMode ? 0 : -1) : bestTier;
+
+        const tierWins  = effTier > cmpBestTier;
+        const tierTies  = effTier === cmpBestTier;
         const primWins  = tierTies && primary > bestPrimary + 1e-6;
         const primTies  = tierTies && Math.abs(primary - bestPrimary) <= 1e-6;
         const secWins   = primTies && secondary > bestSecondary + 1e-6;
@@ -2555,6 +2577,7 @@ function generatePlan(s){
         if(tierWins || primWins || secWins){
           best = cand;
           bestTier = cand.tier; bestPrimary = primary; bestSecondary = secondary;
+          bestGapMode = gapMode;
         }
       }
 
@@ -4372,8 +4395,8 @@ function renderStep2(){
           <input type="checkbox" ${state.landFixed!==false?"checked":""} style="margin-top:2px;flex-shrink:0"
             onchange="state.landFixed=this.checked;renderApp()"/>
           <span style="flex:1;min-width:0">
-            <strong style="font-size:12px">Fixed land allocation</strong><br>
-            <span style="font-size:11px;color:var(--text-mid)">Ticked: algorithm keeps crops within the area types below.<br>Unticked: draws freely from the combined total.</span>
+            <strong style="font-size:12px">Fixed land allocation</strong>
+            <span class="card-desc" style="display:block;margin-top:2px">When ticked, the algorithm keeps crops within the area types below. When unticked, it draws freely from the combined total.</span>
           </span>
         </label>
       </div>
