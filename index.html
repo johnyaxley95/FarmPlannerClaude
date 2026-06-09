@@ -164,7 +164,9 @@ input[type=checkbox]{accent-color:var(--green);width:16px;height:16px;cursor:poi
   border-top:2px solid;border-left:2px solid;border-right:2px solid;border-bottom:2px solid;
   box-shadow:2px 2px 0 rgba(61,46,28,.2);}
 .tag-veg    {background:#E4EED4;color:#2A4A18;border-color:#8FAF60}
-.tag-fruit  {background:#F0E4D0;color:#6A3010;border-color:#C4823A}
+.tag-darkgreen{background:#D2E2C4;color:#16320C;border-color:#2E5E26}
+.tag-redorange{background:#F6E0C4;color:#6E1E14;border-color:#D2832E}
+.tag-fruit  {background:#E8DEF2;color:#4A2070;border-color:#9A6EC4}
 .tag-starch {background:#EDE8D0;color:#5A4810;border-color:#B4A050}
 .tag-protein{background:#EDE0D8;color:#5A2818;border-color:#B07858}
 .tag-dairy  {background:#DCE4E0;color:#2A4040;border-color:#7AABA0}
@@ -1383,11 +1385,11 @@ function zeroFG(){ const o={}; FG_KEYS.forEach(k=>o[k]=0); return o; }
 // Canonical display metadata for the 13 groups: [key]: {label, short, tag, color}.
 // Single source of truth for NRV bars, diet legend, monthly grid, plan summary tables.
 const FG_DISPLAY = {
-  darkgreen:    {label:"Dark Green Veg", short:"Greens",  tag:"tag-veg",     color:"#3E6E3E"},
-  redorange:    {label:"Red/Orange Veg", short:"Red/Org", tag:"tag-veg",     color:"#C4823A"},
+  darkgreen:    {label:"Dark Green Veg", short:"Greens",  tag:"tag-darkgreen", color:"#2E5E26"},
+  redorange:    {label:"Red/Orange Veg", short:"Red/Org", tag:"tag-redorange", color:"#D2832E"},
   othervet:     {label:"Other Veg",      short:"Veg",     tag:"tag-veg",     color:"#6E8C3E"},
   tubers:       {label:"Tubers",         short:"Tubers",  tag:"tag-starch",  color:"#A98C38"},
-  fruit:        {label:"Fruit",          short:"Fruit",   tag:"tag-fruit",   color:"#C4823A"},
+  fruit:        {label:"Fruit",          short:"Fruit",   tag:"tag-fruit",   color:"#7A4FA8"},
   grain:        {label:"Grains",         short:"Grain",   tag:"tag-starch",  color:"#B89A48"},
   legumes:      {label:"Legumes",        short:"Legumes", tag:"tag-protein", color:"#8A6A3A"},
   nutsseeds:    {label:"Nuts & Seeds",   short:"Nuts",    tag:"tag-protein", color:"#9A5A3A"},
@@ -1422,7 +1424,7 @@ function splitADG(a){
 const FERTILITY_MULT={low:0.55,medium:0.75,high:0.95};
 const STORABILITY_RANK={"Long Storage":5,"Medium Storage":4,"Year-round Proc.":3,"Short Storage":2,"Fresh Only":1};
 // Food-group display tag classes, keyed by the crops.json food_group strings (13-group taxonomy).
-const FG_TAG={"Dark Green Vegetables":"tag-veg","Red/Orange Vegetables":"tag-veg","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
+const FG_TAG={"Dark Green Vegetables":"tag-darkgreen","Red/Orange Vegetables":"tag-redorange","Other Vegetables":"tag-veg","Tubers":"tag-starch","Fruit":"tag-fruit","Grain (Cereal) Foods":"tag-starch","Legumes":"tag-protein","Nuts & Seeds":"tag-protein","Eggs":"tag-protein","Meat":"tag-protein","Dairy":"tag-dairy","Herbs":"tag-herbs","Discretionary":"tag-disc"};
 const FG_SHORT={"Dark Green Vegetables":"Greens","Red/Orange Vegetables":"Red/Org","Other Vegetables":"Veg","Tubers":"Tubers","Fruit":"Fruit","Grain (Cereal) Foods":"Grain","Legumes":"Legumes","Nuts & Seeds":"Nuts","Eggs":"Eggs","Meat":"Meat","Dairy":"Dairy","Herbs":"Herb","Discretionary":"Disc"};
 // Floored groups iterated in greedy phase-1, as crops.json food_group strings (order = allocation priority).
 const FG_GROUPS=["Dark Green Vegetables","Red/Orange Vegetables","Other Vegetables","Tubers","Fruit","Grain (Cereal) Foods","Legumes","Nuts & Seeds","Eggs","Meat","Dairy"];
@@ -3827,6 +3829,32 @@ function landCompositionFigure(s, p){
   </div>`;
 }
 // Labour-by-task stacked bar — shared by Farm Plan overview and Manual adjustment.
+// NRV coverage bars (reusable in Overview + Adjust). Returns inner HTML for a sci-fig.
+function nrvFigure(s, p){
+  const yieldNut = nutritionalYield(p, s.fertility, s.confidence);
+  const dailyNRV = householdNRV(s.household);
+  const order = ["kcal","protein","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
+  const fmtN = v => v < 1000 ? v.toFixed(0) : v >= 1e6 ? (v/1e6).toFixed(1)+"M" : v >= 1e4 ? Math.round(v/1000)+"k" : Math.round(v).toLocaleString();
+  const rows = order.map(n => {
+    const produced = yieldNut[n] || 0;
+    const needed = (dailyNRV[n] || 0) * 365;
+    if(!needed) return "";
+    const pct = Math.round(produced/needed*100);
+    const cap = Math.min(100, pct);
+    const barColor = pct >= 100 ? "var(--green)" : pct >= 70 ? "var(--clay)" : "var(--iron)";
+    const label = NUTRIENT_LABELS[n] || n;
+    const unit = NUTRIENT_UNITS[n] || "";
+    const badge = pct >= 100 ? `<span class="adj-delta-good">✓</span>` : `<span style="color:${pct>=70?"var(--clay)":"var(--iron)"}">${pct}%</span>`;
+    return `<div class="adj-nut-row">
+      <div class="adj-nut-name">${label}</div>
+      <div class="adj-nut-info">${fmtN(produced)} / ${fmtN(needed)} ${unit}</div>
+      <div class="adj-nut-bar"><div class="adj-nut-fill" style="width:${cap}%;background:${barColor}"></div></div>
+      <div class="adj-nut-pct">${badge}</div>
+    </div>`;
+  }).filter(r=>r).join("");
+  return `<div class="adj-nut-list">${rows}</div>`;
+}
+
 function labourTaskFigure(s, p){
   let labAnnual=0, labPerennial=0;
   (p.selected||[]).forEach(x=>{ if(x.crop && x.crop.perennial) labPerennial += x.labour||0; else labAnnual += x.labour||0; });
@@ -4794,6 +4822,22 @@ function renderStep4(){
         const budgetBar = state.landFixed === false ? `<div style="background:var(--card2);border:1px solid var(--border-dk);padding:10px 12px;margin-top:0">
           <div class="adj-bud-section-hdr" style="margin-bottom:7px">Land allocation — fluid pool</div>
           ${landCompositionFigure(state, p)}
+          ${(()=>{
+            const pl = p.layers || {canopy:0, trees:0, plants:0};
+            const footprint = Math.max(pl.canopy||0, pl.trees||0, pl.plants||0);
+            if(footprint < 0.00005) return "";
+            return `<div class="adj-bud-section" style="margin-top:11px">
+              <div class="adj-bud-section-hdr">Perennial layers · ${fmtHa(footprint)} footprint (layers stack)</div>
+              ${pLayerDefs.map(({key,label,color}) => {
+                const used = pl[key]||0;
+                return `<div class="adj-layer-row">
+                  <span class="adj-layer-lbl" style="color:${color}">${label}</span>
+                  <span class="adj-layer-val">${fmtHa(used)}</span>
+                  ${planBudBar(used, footprint, color)}
+                </div>`;
+              }).join("")}
+            </div>`;
+          })()}
           <div class="adj-bud-section" style="margin-top:11px">
             <div class="adj-bud-section-hdr">Labour · ${(state.hoursPerWeek*52).toLocaleString()} hrs/yr budget</div>
             <div class="adj-layer-row">
@@ -4870,13 +4914,20 @@ function renderStep4(){
               <p class="card-desc" style="margin-top:8px">Daily serves achieved as a share of household ADG targets, by food group.</p>
             </fieldset>
             <fieldset class="sci-fig">
-              <legend>Land Allocation</legend>
+              <legend>Nutrient Reference Values (NRV)</legend>
               <div class="sci-fig-inner">
-                ${landCompositionFigure(state, p)}
+                ${nrvFigure(state, p)}
               </div>
-              <p class="card-desc" style="margin-top:8px">${state.landFixed===false?"Fluid pool — algorithm draws crops, livestock and aquaculture freely across the total holding.":"Fixed allocation — each land type is capped at its configured area."}</p>
+              <p class="card-desc" style="margin-top:8px">Annual nutrient production vs household NRV requirements. Bars cap at 100%; values show produced / needed per year.</p>
             </fieldset>
           </div>
+          <fieldset class="sci-fig" style="margin-top:14px">
+            <legend>Land Allocation</legend>
+            <div class="sci-fig-inner">
+              ${landCompositionFigure(state, p)}
+            </div>
+            <p class="card-desc" style="margin-top:8px">${state.landFixed===false?"Fluid pool — algorithm draws crops, livestock and aquaculture freely across the total holding.":"Fixed allocation — each land type is capped at its configured area."}</p>
+          </fieldset>
           <fieldset class="sci-fig" style="margin-top:14px">
             <legend>Labour by Task</legend>
             <div class="sci-fig-inner">${labourTaskFigure(state, p)}</div>
