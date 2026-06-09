@@ -2435,12 +2435,14 @@ function generatePlan(s){
     // Fresh crops always use tight cap for seasonal variety.
     // Non-fresh: minimiseLabour/Space use a larger cap so one efficient crop
     // can dominate the allocation, reducing total crop count.
-    const perCropCap = isFresh ? 0.20 * targetServes
-      : (objMode === "minimiseLabour" || objMode === "minimiseSpace")
-        ? 0.75 * targetServes   // one dominant crop + one supplement
-        : 0.50 * targetServes;  // balanced / maximiseYield — no single crop > 50%
+    // No per-crop food-group cap. Diversity for perishable groups emerges from the
+    // month-by-month fresh-coverage scoring (a single crop can't cover all 12 months,
+    // so the loop keeps pulling new crops to fill seasonal gaps). Storable groups
+    // (grain, tubers, legumes, nuts) consolidate to efficient sources, which is realistic.
     const fgCandidates = isDairy ? [] : candidates.filter(x => effectiveFoodGroup(x.crop) === fg);
     const lsFgCands = lsCandidates.filter(lc => lc.key === key);
+    // No livestock per-species cap either — a single species may meet the full group target.
+    const lsCapFrac = 1.0;
     const usedNames = new Set(selected.filter(s => effectiveFoodGroup(s.crop) === (isDairy ? '__dairy__' : fg)).map(s => s.crop.name));
 
     // Iterate; stop when target met AND (for fresh) worst month is at least 60%
@@ -2524,7 +2526,7 @@ function generatePlan(s){
           if(lc.labourPerStep > labL + 0.1) continue;
           const poolLeft = AQUATIC_LIVESTOCK.has(lc.ls.name) ? swL : pasL;
           if(lc.spaceHaPerStep > poolLeft + 0.0001) continue;
-          if(lsServesPerDay(lc.ls, lc.usedCount) >= targetServes * 0.50) continue;
+          if(lsServesPerDay(lc.ls, lc.usedCount) >= targetServes * lsCapFrac) continue;
           if(lc.score > bestLsEff){ bestLsEff = lc.score; bestLs = lc; }
         }
       }
@@ -2540,7 +2542,7 @@ function generatePlan(s){
           : (s.pastureHa||0) - usedPastureHa;
         const maxByLab = bestLs.labourPerStep > 0 ? Math.floor(labL2 / bestLs.labourPerStep) : 99;
         const maxByPas = bestLs.spaceHaPerStep > 0 ? Math.floor((pasL2+0.0001) / bestLs.spaceHaPerStep) : 99;
-        const capServes = targetServes * 0.50 - lsServesPerDay(bestLs.ls, bestLs.usedCount);
+        const capServes = targetServes * lsCapFrac - lsServesPerDay(bestLs.ls, bestLs.usedCount);
         const maxByCap = bestLs.servesPerStep > 0 ? Math.ceil(capServes / bestLs.servesPerStep) : 1;
         const gapSteps = bestLs.servesPerStep > 0 ? Math.max(1, Math.ceil((targetServes - achieved[key]) / bestLs.servesPerStep)) : 1;
         const nSteps = Math.min(gapSteps, maxByCap, maxByLab, maxByPas, 5);
@@ -2549,7 +2551,19 @@ function generatePlan(s){
       } else if(best){
         usedNames.add(best.crop.name);
         const remaining = targetServes - achieved[key];
-        let wantServes = sufficient ? perCropCap * 0.25 : Math.min(remaining, perCropCap);
+        // Non-fresh groups: one efficient source can take the whole remaining target.
+        // Fresh groups: size each pass so a crop fills roughly its share of the year
+        // (peak-month count / 12), letting later iterations pick different crops for the
+        // uncovered months. This produces seasonal diversity from coverage, not a fixed cap.
+        let wantServes;
+        if(isFresh){
+          let peakMonths = 0;
+          MONTHS.forEach(m => { const v = best.crop.months[m]; if(v === "P") peakMonths += 1; else if(v === "S") peakMonths += 0.5; });
+          const seasonShare = peakMonths > 0 ? Math.min(1, peakMonths / 12 * 2) : 0.25; // ×2: a crop can store/spread a little
+          wantServes = sufficient ? remaining * 0.10 : Math.min(remaining, targetServes * seasonShare);
+        } else {
+          wantServes = sufficient ? remaining * 0.10 : remaining;
+        }
         if(wantServes <= 0.01) continue;
         const areaNeeded = areaForServes(best.crop, wantServes, s.fertility, s.confidence);
         if(!areaNeeded || areaNeeded <= 0) continue;
@@ -3121,77 +3135,12 @@ function solveLpForCandidates(s, candidates, lsList, annualNRV, annualServes, ta
     });
   });
 
-  // ── DIETARY REALISM CAPS (Level 1+2) ───────────────────────────────────
-  // Hard upper bound on serves/day from any single food. Without this, the LP
-  // picks a small set of mega-crops/animals to fill nutrient targets,
-  // producing diets like "24 serves of sweet potato" or "17 eggs per day."
-  //
-  // Cap formula (applied to both crop groups and livestock outputs):
-  //   cap = min( ABSOLUTE_PER_PERSON × household_size,    -- palatability ceiling
-  //              GROUP_PCT × group_target_for_food )       -- within-group diversity
-  //
-  // CROP grouping: cultivars sharing a scientific name (e.g. all three "Sweet
-  // Potato (Orange/Purple/White)" = Ipomoea batatas) are summed and capped as
-  // one food. Crops that share a common name but are botanically distinct
-  // (Bean Broad/Fava = Vicia faba vs Bean Green = Phaseolus vulgaris; Globe
-  // vs Jerusalem artichoke) are correctly kept separate. See CROP_LATIN
-  // lookup table near the top of the file.
-  //
-  // LIVESTOCK outputs are each capped separately. Outputs whose food_group
-  // doesn't map to a tracked LP group (e.g. "Discretionary" = honey) fall back
-  // to the absolute cap only — preventing the LP from using them as a cheap
-  // nutrient source.
-  const householdSize = (s.household||[]).length || 1;
-  const ABSOLUTE_CAP_PER_PERSON = 2.0;
-  const GROUP_CAP_PCT = 0.50;
-  const absCap = ABSOLUTE_CAP_PER_PERSON * householdSize;
-
-  // Build species groups for crops using scientific (Latin) names. Cultivars
-  // sharing a species (e.g. Sweet Potato Orange/Purple/White → Ipomoea batatas)
-  // are summed under one cap. Different species sharing a common name (e.g.
-  // Bean Broad/Fava = Vicia faba vs Bean Green = Phaseolus vulgaris, or Globe
-  // vs Jerusalem artichoke) are correctly kept separate.
-  const speciesGroupIdx = {};
-  candidates.forEach((cr, i) => {
-    const sp = getCropLatin(cr);
-    (speciesGroupIdx[sp] = speciesGroupIdx[sp] || []).push(i);
-  });
-
-  // One cap row per species group
-  Object.values(speciesGroupIdx).forEach(indices => {
-    const firstCrop = candidates[indices[0]];
-    const fgKey = FG_KEY[effectiveFoodGroup(firstCrop)];
-    if(!fgKey) return;
-    const groupTarget = targets[fgKey] || 0;
-    if(groupTarget <= 0) return;
-    const cap = Math.min(absCap, GROUP_CAP_PCT * groupTarget);
-
-    pushRow(r => {
-      indices.forEach(i => {
-        const cr = candidates[i];
-        const adjY = subsistYield(cr, s.fertility, s.confidence);
-        const sg = cr.serve_g || 75;
-        const servesPerHaPerDay = adjY * 1e6 / sg / 365;
-        if(servesPerHaPerDay > 0) r[ix.crop(i)] = servesPerHaPerDay;
-      });
-    }, "<=", cap);
-  });
-
-  // Livestock output caps (one row per species×output)
-  const DISCRETIONARY_CAP_PER_PERSON = 0.5;  // tighter cap for honey/sweeteners/etc
-  lsList.forEach((ls, j) => {
-    const outFgKey = fgToKey(ls.food_group);
-    const groupTarget = outFgKey ? (targets[outFgKey] || 0) : 0;
-    // Mapped food groups → standard cap. Discretionary/unmapped (e.g. honey)
-    // → tighter cap, since these don't substitute for real foods and are
-    // commonly used by the LP as cheap calorie sources otherwise.
-    const cap = groupTarget > 0
-      ? Math.min(absCap, GROUP_CAP_PCT * groupTarget)
-      : DISCRETIONARY_CAP_PER_PERSON * householdSize;
-    const servesPerAnimalPerDay = lsServesPerDay(ls, 1);
-    if(servesPerAnimalPerDay <= 0) return;
-    pushRow(r => { r[ix.ls(j)] = servesPerAnimalPerDay; }, "<=", cap);
-  });
+  // ── DIETARY REALISM CAPS — REMOVED ─────────────────────────────────────
+  // Per-food and per-group serve caps (50% group cap, 2 serves/person absolute,
+  // discretionary honey cap) have been removed. Diversity is driven by the monthly
+  // fresh-coverage constraints instead of arbitrary fractions. Watch rendered LP
+  // plans for single-source domination; if it appears, strengthen fresh-coverage
+  // constraints rather than reinstating a flat percentage cap.
 
   // ── Solve ──────────────────────────────────────────────────────────────
   const lp = lpSolveBigM({
@@ -4976,7 +4925,7 @@ function renderStep4(){
             `<br><span style="font-size:11px">Still below 85% of NRV: ${li.nutrientsUnderSupplied.map(u => `<strong>${u.name}</strong> (${u.pct}%)`).join(", ")}</span>` : ""}
           ${tierLine}
           ${monthlyGapsLine}
-          <div style="font-size:11px;margin-top:6px;color:var(--text-mid);font-style:italic">Dietary realism caps active: crops grouped by scientific name (cultivars of same species summed) and livestock outputs each limited to 2 serves/person/day or 50% of food-group target, whichever is smaller.</div>
+          <div style="font-size:11px;margin-top:6px;color:var(--text-mid);font-style:italic">Food-group serve caps removed — diversity is driven by month-by-month fresh-supply coverage rather than fixed per-food limits.</div>
         </div>`;
       })() : ""}
     </div>
