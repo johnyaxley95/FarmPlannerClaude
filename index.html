@@ -2170,15 +2170,17 @@ function fgToKey(fg){
 // Classify an annual crop as "cool" (May–Oct harvest), "warm" (Nov–Apr), or "dual"
 function getCropSeason(crop){
   if(crop.perennial) return null;
-  const COOL = new Set(["may","jun","jul","aug","sep","oct"]); // Oct = cool
-  const WARM = new Set(["nov","dec","jan","feb","mar","apr"]); // Apr = warm
+  // WARM = Jan–Apr (true summer harvest); COOL = May–Dec.
+  // Cool-season Perth crops (wheat, potato, brassicas) peak Oct–Dec, so those
+  // months sit in COOL. Harvest-only scoring (P=2, S=1); ties default to cool.
+  const COOL = new Set(["may","jun","jul","aug","sep","oct","nov","dec"]);
+  const WARM = new Set(["jan","feb","mar","apr"]);
   let cs = 0, ws = 0;
   Object.entries(crop.months||{}).forEach(([m,v]) => {
     const w = v==="P" ? 2 : v==="S" ? 1 : 0;
     if(COOL.has(m)) cs += w;
     if(WARM.has(m)) ws += w;
   });
-  // Strictly one or the other — whichever has more harvest weight wins
   return ws > cs ? "warm" : "cool"; // default to cool if equal or no data
 }
 
@@ -4013,20 +4015,6 @@ function isSuitable(crop){
     if(rain < rMin || rain > rMax) return false;
   }
   return true;
-}
-
-// Classify annual crops into harvest season groups
-// WARM = Nov–Apr (summer harvest)  COOL = May–Oct (winter harvest)  YEARROUND = bimodal/succession
-const WARM_M=["jan","feb","mar","apr"];
-const COOL_M=["may","jun","jul","aug","sep","oct","nov","dec"];
-// These salad/herb crops are genuinely succession-planted across both seasons
-const YEARROUND_CROPS=new Set(["Lettuce (Cos)","Lettuce (Iceberg)","Rocket (Arugula)","Parsley","Parsley (Curly)","Dill","Onion (Spring)"]);
-
-function cropSeasonGroup(crop){
-  if(YEARROUND_CROPS.has(crop.name)) return "yearround";
-  const wScore=WARM_M.reduce((s,m)=>s+(crop.months[m]==="S"?2:crop.months[m]==="P"?1:0),0);
-  const cScore=COOL_M.reduce((s,m)=>s+(crop.months[m]==="P"?2:crop.months[m]==="S"?1:0),0);
-  return wScore>cScore?"warm":"cool";
 }
 
 function plantCount(crop, allocHa){
