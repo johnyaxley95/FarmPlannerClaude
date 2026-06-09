@@ -1380,6 +1380,25 @@ const FLOOR_KEYS=["darkgreen","redorange","othervet","tubers","fruit","grain",
 // nuts & seeds) are exempt; herbs are fresh-harvest so included.
 const PLANT_FRESH_KEYS=["darkgreen","redorange","othervet","fruit","herbs"];
 function zeroFG(){ const o={}; FG_KEYS.forEach(k=>o[k]=0); return o; }
+// Canonical display metadata for the 13 groups: [key]: {label, short, tag, color}.
+// Single source of truth for NRV bars, diet legend, monthly grid, plan summary tables.
+const FG_DISPLAY = {
+  darkgreen:    {label:"Dark Green Veg", short:"Greens",  tag:"tag-veg",     color:"#3E6E3E"},
+  redorange:    {label:"Red/Orange Veg", short:"Red/Org", tag:"tag-veg",     color:"#C4823A"},
+  othervet:     {label:"Other Veg",      short:"Veg",     tag:"tag-veg",     color:"#6E8C3E"},
+  tubers:       {label:"Tubers",         short:"Tubers",  tag:"tag-starch",  color:"#A98C38"},
+  fruit:        {label:"Fruit",          short:"Fruit",   tag:"tag-fruit",   color:"#C4823A"},
+  grain:        {label:"Grains",         short:"Grain",   tag:"tag-starch",  color:"#B89A48"},
+  legumes:      {label:"Legumes",        short:"Legumes", tag:"tag-protein", color:"#8A6A3A"},
+  nutsseeds:    {label:"Nuts & Seeds",   short:"Nuts",    tag:"tag-protein", color:"#9A5A3A"},
+  eggs:         {label:"Eggs",           short:"Eggs",    tag:"tag-protein", color:"#C8A030"},
+  meat:         {label:"Meat",           short:"Meat",    tag:"tag-protein", color:"#8A3A3A"},
+  dairy:        {label:"Dairy",          short:"Dairy",   tag:"tag-dairy",   color:"#6A7A8A"},
+  herbs:        {label:"Herbs",          short:"Herb",    tag:"tag-herbs",   color:"#5E8C5E"},
+  discretionary:{label:"Discretionary",  short:"Disc",    tag:"tag-disc",    color:"#9A9A9A"},
+};
+// Floored groups only, for display rows that should skip herbs/discretionary unless present.
+const FG_DISPLAY_ROWS = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].tag]);
 // Split the legacy ADG 6-value serves ({veg,fruit,starchy,protein,dairy,oils}) across 13 keys,
 // preserving total serving quantity. Ratios are sensible defaults (refine later if desired).
 function splitADG(a){
@@ -1714,131 +1733,10 @@ function getCropLatin(crop){
 let idSeq=1;
 
 // ── Livestock data ──────────────────────────────────────────────────────────
-const LIVESTOCK_DATA = [
-  {
-    name: "Chicken (Eggs)", icon: "", category: "Poultry", unit_label: "hens",
-    space_m2_per_animal: 4, step: 3, min_count: 3, labour_hrs_per_animal: 15,
-    notes: "Free-range minimum 4 m²/bird. Minimum flock of 3 for welfare.",
-    outputs: [
-      { name: "Eggs", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 260, unit: "eggs", serve_g: 55,
-        nut: {"kcal":143, "protein":12.6, "fat":9.51, "carbs":0.72, "fiber":0, "ca":56, "fe":1.75, "mg":12, "p":198, "k":138, "na":142, "zn":1.29, "se":30.7, "vitA":160, "vitD":2.2, "vitE":1.05, "b2":0.457, "b12":1.11, "folate":47} }
-    ]
-  },
-  {
-    name: "Chicken (Meat)", icon: "", category: "Poultry", unit_label: "birds/yr",
-    space_m2_per_animal: 2, step: 10, min_count: 10, labour_hrs_per_animal: 5,
-    notes: "Free-range broilers 2 m²/bird. Count = total birds raised per year across all batches. Each ~1.5 kg dressed.",
-    outputs: [
-      { name: "Chicken Meat", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 1500, unit: "g", serve_g: 100,
-        nut: {"kcal":215, "protein":18.6, "fat":15.1, "carbs":0, "fiber":0, "ca":11, "fe":0.87, "mg":20, "p":147, "k":189, "na":70, "zn":1.3, "se":14.3, "vitA":41, "vitD":0.22, "vitC":1.6, "b1":0.06, "b2":0.12, "b3":6.8, "b6":0.46, "b12":0.31, "folate":6} }
-    ]
-  },
-  {
-    name: "Goat (Dairy)", icon: "", category: "Ruminant", unit_label: "does",
-    space_m2_per_animal: 1000, step: 1, min_count: 1, labour_hrs_per_animal: 150,
-    notes: "Dairy doe: ~700 L milk/yr. Needs ~1,000 m2 grazing per goat. Daily milking required.",
-    outputs: [
-      { name: "Goat Milk", food_group: "Dairy",
-        qty_per_animal_yr: 700000, unit: "mL", serve_g: 250,
-        nut: {"kcal":69, "protein":3.56, "fat":4.14, "carbs":4.45, "fiber":0,
-               "ca":134, "fe":0.05, "mg":14, "p":111, "k":204, "na":50, "zn":0.3,
-               "se":1.4, "vitA":57, "vitD":0.1,
-               "b2":0.138, "b12":0.065, "folate":1} }
-    ]
-  },
-  {
-    name: "Goat (Meat)", icon: "", category: "Ruminant", unit_label: "animals",
-    space_m2_per_animal: 500, step: 2, min_count: 2, labour_hrs_per_animal: 60,
-    notes: "Meat breeds (Boer, Kiko etc.). ~25 kg dressed weight per animal/yr. Needs ~500 m2 grazing per animal.",
-    outputs: [
-      { name: "Goat Meat", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 25000, unit: "g", serve_g: 100,
-        nut: {"kcal":143, "protein":27.1, "fat":3.03, "carbs":0, "fiber":0,
-               "ca":17, "fe":2.83, "mg":23, "p":210, "k":385, "na":82, "zn":4.31,
-               "se":8.8, "b3":6.8, "b6":0.2, "b12":2.1} }
-    ]
-  },
-  {
-        name: "Rainbow Trout", icon: "", category: "Aquaculture", unit_label: "fish/yr",
-    space_m2_per_animal: 0.5, step: 20, min_count: 20, labour_hrs_per_animal: 2,
-    notes: "Pond/tank — ~0.5 m²/fish. Count = fish harvested per year. Each yields ~350 g fillet from ~700 g live weight.",
-    outputs: [
-      { name: "Trout Fillet", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 350, unit: "g", serve_g: 100,
-        nut: {"kcal":150, "protein":21.5, "fat":6.61, "carbs":0, "fiber":0, "ca":73, "fe":0.54, "mg":26, "p":272, "k":481, "na":52, "zn":0.63, "se":15.4, "vitA":22, "vitD":16.2, "vitE":2.22, "b3":6.26, "b6":0.5, "b12":3.51} }
-    ]
-  },
-  {
-    name: "Honeybee Colony", icon: "", category: "Insects", unit_label: "hives",
-    space_m2_per_animal: 1, step: 1, min_count: 1, labour_hrs_per_animal: 40,
-    notes: "1 m² per hive. Bees forage up to 3 km — no extra land needed. Also provides free pollination boost to all crops.",
-    outputs: [
-      { name: "Honey", food_group: "Discretionary",
-        qty_per_animal_yr: 20000, unit: "g", serve_g: 20,
-        nut: {"kcal":304, "protein":0.3, "fat":0, "carbs":82.4, "fiber":0.2, "ca":6, "fe":0.42, "mg":2, "p":4, "k":52, "na":4, "zn":0.22, "b2":0.038, "b3":0.121, "b6":0.024, "folate":2} }
-    ]
-  }
-  ,
-  {
-    name: "Dairy Cattle", icon: "", category: "Ruminant", unit_label: "cows",
-    space_m2_per_animal: 10000, step: 1, min_count: 1, labour_hrs_per_animal: 400,
-    notes: "Family dairy cow (Holstein-Friesian or Jersey cross). ~6,000 L milk/yr. Requires daily milking and ~1 ha pasture per cow.",
-    outputs: [
-      { name: "Cow Milk", food_group: "Dairy",
-        qty_per_animal_yr: 6000000, unit: "mL", serve_g: 250,
-        nut: {"kcal":65, "protein":3.3, "fat":3.8, "carbs":4.8, "fiber":0,
-               "ca":118, "fe":0.03, "mg":10, "p":91, "k":143, "na":44, "zn":0.38,
-               "se":2.0, "vitA":46, "vitD":0.04, "b2":0.19, "b12":0.4, "iodine":15} },
-      { name: "Dairy Tallow", food_group: "Oils & Fats",
-        qty_per_animal_yr: 6000, unit: "g", serve_g: 10,
-        nut: {"kcal":902,"fat":99.8,"protein":0,"carbs":0,"fiber":0} }
-    ]
-  },
-  {
-    name: "Beef Cattle", icon: "", category: "Ruminant", unit_label: "animals",
-    space_m2_per_animal: 20000, step: 2, min_count: 2, labour_hrs_per_animal: 30,
-    notes: "Beef steer/heifer. ~75 kg edible meat/animal/yr equivalent (slaughtered at 18-24 months). Requires ~2 ha grazing per animal.",
-    outputs: [
-      { name: "Beef", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 75000, unit: "g", serve_g: 100,
-        nut: {"kcal":172, "protein":27.0, "fat":7.0, "carbs":0, "fiber":0,
-               "ca":9, "fe":3.5, "mg":22, "p":200, "k":340, "na":60, "zn":6.2,
-               "se":12, "b3":5.5, "b6":0.4, "b12":2.5} },
-      { name: "Beef Tallow", food_group: "Oils & Fats",
-        qty_per_animal_yr: 28000, unit: "g", serve_g: 10,
-        nut: {"kcal":902,"fat":99.8,"protein":0,"carbs":0,"fiber":0} }
-    ]
-  }
-  ,
-  {
-    name: "Sheep (Meat)", icon: "Sh", category: "Ruminant", unit_label: "animals",
-    space_m2_per_animal: 2000, step: 2, min_count: 2, labour_hrs_per_animal: 20,
-    notes: "Meat sheep (Merino cross, Dorper etc.). ~25 kg dressed weight/animal/yr. ~2,000 m² grazing per animal.",
-    outputs: [
-      { name: "Lamb/Mutton", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 25000, unit: "g", serve_g: 100,
-        nut: {"kcal":218,"protein":26.0,"fat":12.6,"carbs":0,"fiber":0,"ca":16,"fe":2.5,"mg":23,"p":195,"k":330,"na":70,"zn":4.8,"se":5.0,"b3":6.5,"b6":0.3,"b12":2.8} },
-      { name: "Sheep Tallow", food_group: "Oils & Fats",
-        qty_per_animal_yr: 1500, unit: "g", serve_g: 10,
-        nut: {"kcal":902,"fat":99.8,"protein":0,"carbs":0,"fiber":0} }
-    ]
-  },
-  {
-    name: "Pig (Pork)", icon: "Pg", category: "Omnivore", unit_label: "animals",
-    space_m2_per_animal: 50, step: 2, min_count: 2, labour_hrs_per_animal: 30,
-    notes: "Pigs raised to ~100 kg live weight. ~55 kg edible meat per pig. 50 m² per animal. Lard from rendered fat trimmings.",
-    outputs: [
-      { name: "Pork", food_group: "Lean Meats, Eggs, Nuts, Seeds & Legumes",
-        qty_per_animal_yr: 55000, unit: "g", serve_g: 100,
-        nut: {"kcal":242,"protein":27.0,"fat":14.0,"carbs":0,"fiber":0,"ca":18,"fe":1.0,"mg":22,"p":195,"k":370,"na":62,"zn":2.4,"se":30.0,"b1":0.84,"b3":5.6,"b6":0.4,"b12":0.7} },
-      { name: "Lard", food_group: "Oils & Fats",
-        qty_per_animal_yr: 8000, unit: "g", serve_g: 10,
-        nut: {"kcal":898,"fat":99.5,"protein":0,"carbs":0,"fiber":0} }
-    ]
-  }
-];
+// Livestock are sourced from crops.json (is_livestock flag) and split out of CROP_DATA
+// at load time. Flat shape: food_group, qty_per_animal_yr (grams/yr), unit, serve_g, nut,
+// months, space_m2_per_animal, labour_hrs_per_animal, step, min_count, byproducts[].
+let LIVESTOCK_DATA = [];
 
 let state={
   step:0,
@@ -1898,7 +1796,7 @@ let state={
   landFixed: false,          // true = respect annual/perennial split; false = fluid total pool
   hasIrrigation: false,      // true = rainfall min constraints are softened in suitability
   livestock: {},         // {name: count} — Adjust-tab overrides
-  checkedLivestock: new Set(LIVESTOCK_DATA.map(l => l.name)),
+  checkedLivestock: null,  // null = default-all; populated after crops.json loads (ensureCheckedLivestock)
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -1956,6 +1854,13 @@ function getSuitableCrops(){
 function ensureCheckedCrops(){
   if(state.checkedCrops===null){
     state.checkedCrops=new Set(getSuitableCrops().map(c=>c.name));
+  }
+}
+
+// Initialise checkedLivestock if null (default: all livestock checked).
+function ensureCheckedLivestock(){
+  if(state.checkedLivestock===null){
+    state.checkedLivestock=new Set(LIVESTOCK_DATA.map(l=>l.name));
   }
 }
 
@@ -2309,6 +2214,23 @@ function lsOutputSummary(ls, count){
   const spd = lsServesPerDay(ls, count);
   const label = spd >= 1 ? spd.toFixed(1) : spd.toFixed(2);
   return `${label} srv/day ${ls.edible_part || ls.name}`;
+}
+
+// CSS tag class for a livestock food group (display only). Byproducts (food_group:null) → oils tag.
+function lsGroupTagClass(fg, style){
+  // style: "tag" (plan summary) | "ls" (plan list) | "sel" (selection panel)
+  if(fg === "Dairy")          return style === "ls" ? "dairy-tag" : "tag-dairy";
+  if(fg === "Discretionary")  return style === "ls" ? "disc-tag" : "";
+  if(!fg)                     return style === "ls" ? "oils-tag" : "tag-oils"; // byproduct fat
+  return style === "ls" ? "" : "tag-protein";
+}
+// List of {label, food_group, qty_per_animal_yr, unit, serve_g, nut} contributions for display.
+function lsDisplayOutputs(ls){
+  const list = [{ label: ls.edible_part || ls.name, food_group: ls.food_group,
+                  qty_per_animal_yr: ls.qty_per_animal_yr, unit: ls.unit, serve_g: ls.serve_g, nut: ls.nut }];
+  (ls.byproducts||[]).forEach(bp => list.push({ label: bp.edible_part, food_group: bp.food_group,
+                  qty_per_animal_yr: bp.qty_per_animal_yr, unit: bp.unit, serve_g: bp.serve_g, nut: bp.nut }));
+  return list;
 }
 
 
@@ -3147,11 +3069,7 @@ function solveLpForCandidates(s, candidates, lsList, annualNRV, annualServes, ta
         r[ix.crop(i)] = adjY * 1e6 / sg / targetA;
       });
       lsList.forEach((ls,j) => {
-        let total = 0;
-        ls.outputs.forEach(out => {
-          if(fgToKey(out.food_group) !== fg) return;
-          total += lsServesPerDay(out, 1) * 365;
-        });
+        const total = fgToKey(ls.food_group) === fg ? lsServesPerDay(ls, 1) * 365 : 0;
         r[ix.ls(j)] = total / targetA;
       });
       r[ix.unmetFg(k)] = 1;
@@ -3193,11 +3111,7 @@ function solveLpForCandidates(s, candidates, lsList, annualNRV, annualServes, ta
         });
         // Livestock contribution: assume year-round constant supply
         lsList.forEach((ls,j) => {
-          let dailyServes = 0;
-          ls.outputs.forEach(out => {
-            if(fgToKey(out.food_group) !== fg) return;
-            dailyServes += lsServesPerDay(out, 1);
-          });
+          const dailyServes = fgToKey(ls.food_group) === fg ? lsServesPerDay(ls, 1) : 0;
           r[ix.ls(j)] = dailyServes / dailyTarget;
         });
         r[ix.unmetM(mIdx, gIdx)] = 1;
@@ -3264,19 +3178,17 @@ function solveLpForCandidates(s, candidates, lsList, annualNRV, annualServes, ta
   // Livestock output caps (one row per species×output)
   const DISCRETIONARY_CAP_PER_PERSON = 0.5;  // tighter cap for honey/sweeteners/etc
   lsList.forEach((ls, j) => {
-    ls.outputs.forEach(out => {
-      const outFgKey = fgToKey(out.food_group);
-      const groupTarget = outFgKey ? (targets[outFgKey] || 0) : 0;
-      // Mapped food groups → standard cap. Discretionary/unmapped (e.g. honey)
-      // → tighter cap, since these don't substitute for real foods and are
-      // commonly used by the LP as cheap calorie sources otherwise.
-      const cap = groupTarget > 0
-        ? Math.min(absCap, GROUP_CAP_PCT * groupTarget)
-        : DISCRETIONARY_CAP_PER_PERSON * householdSize;
-      const servesPerAnimalPerDay = lsServesPerDay(out, 1);
-      if(servesPerAnimalPerDay <= 0) return;
-      pushRow(r => { r[ix.ls(j)] = servesPerAnimalPerDay; }, "<=", cap);
-    });
+    const outFgKey = fgToKey(ls.food_group);
+    const groupTarget = outFgKey ? (targets[outFgKey] || 0) : 0;
+    // Mapped food groups → standard cap. Discretionary/unmapped (e.g. honey)
+    // → tighter cap, since these don't substitute for real foods and are
+    // commonly used by the LP as cheap calorie sources otherwise.
+    const cap = groupTarget > 0
+      ? Math.min(absCap, GROUP_CAP_PCT * groupTarget)
+      : DISCRETIONARY_CAP_PER_PERSON * householdSize;
+    const servesPerAnimalPerDay = lsServesPerDay(ls, 1);
+    if(servesPerAnimalPerDay <= 0) return;
+    pushRow(r => { r[ix.ls(j)] = servesPerAnimalPerDay; }, "<=", cap);
   });
 
   // ── Solve ──────────────────────────────────────────────────────────────
@@ -3360,9 +3272,9 @@ function generatePlanLP(s){
 
 function emptyLpPlan(s, targets, annualBudget, reason){
   const monthCoverage = {};
-  MONTHS.forEach(m => monthCoverage[m] = {veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0});
+  MONTHS.forEach(m => monthCoverage[m] = zeroFG());
   return {
-    selected: [], lsSelected: [], achieved: {veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0},
+    selected: [], lsSelected: [], achieved: zeroFG(),
     targets, usedCoolHa:0, usedWarmHa:0, usedAnnualHa:0, usedPerennialHa:0, usedPerennialHaSum:0,
     layers: {canopy:0,trees:0,plants:0}, usedLabour:0, usedPastureHa:0,
     annualBudget, monthCoverage, suitableCount: 0,
@@ -3379,9 +3291,9 @@ function buildPlanFromLP(s, data, annualBudget, targets){
 
   const selected = [];
   const lsSelected = [];
-  const achieved = {veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0};
+  const achieved = zeroFG();
   const monthCoverage = {};
-  MONTHS.forEach(m => monthCoverage[m] = {veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0});
+  MONTHS.forEach(m => monthCoverage[m] = zeroFG());
 
   let usedCoolHa=0, usedWarmHa=0;
   let usedCanopyHa=0, usedTreesHa=0, usedPerennialPlantsHa=0;
@@ -3464,14 +3376,12 @@ function buildPlanFromLP(s, data, annualBudget, targets){
     const minC = ls.min_count || 0;
     let count = Math.max(minC, Math.round(raw / step) * step);
     if(count <= 0) return;
-    ls.outputs.forEach(out => {
-      const spd = lsServesPerDay(out, count);
-      const key = fgToKey(out.food_group);
-      if(key && achieved[key] !== undefined){
-        achieved[key] += spd;
-        MONTHS.forEach(m => { if(monthCoverage[m][key] !== undefined) monthCoverage[m][key] += spd; });
-      }
-    });
+    const spd = lsServesPerDay(ls, count);
+    const key = fgToKey(ls.food_group);
+    if(key && achieved[key] !== undefined){
+      achieved[key] += spd;
+      MONTHS.forEach(m => { if(monthCoverage[m][key] !== undefined) monthCoverage[m][key] += spd; });
+    }
     usedLabour += (ls.labour_hrs_per_animal||0) * count;
     usedPastureHa += ls.space_m2_per_animal * count / 10000;
     lsSelected.push({ls, count});
@@ -3547,11 +3457,10 @@ const PARETO_OBJ = {
     label:"Fresh Supply Gaps", unit:"gap-months", maximize:false,
     fn(plan,targets){
       // Count month×foodgroup combinations where fresh coverage < 50% of target
-      const mo={};MONTHS.forEach(m=>mo[m]={veg:0,fruit:0,starchy:0,protein:0});
+      const mo={};MONTHS.forEach(m=>mo[m]=zeroFG());
       plan.selected.forEach(({crop,serves})=>{
-        const fg=effectiveFoodGroup(crop);
-        const key=fg==="Vegetables & Legumes"?"veg":fg==="Fruit"?"fruit":fg==="Starches"?"starchy":fg.startsWith("Lean")?"protein":null;
-        if(!key)return;
+        const key=fgToKey(effectiveFoodGroup(crop));
+        if(!key||mo["jan"][key]===undefined)return;
         MONTHS.forEach(m=>{
           const v=crop.months[m];
           if(v==="P")mo[m][key]+=serves;
@@ -3559,7 +3468,7 @@ const PARETO_OBJ = {
         });
       });
       let gaps=0;
-      ["veg","fruit","starchy","protein"].forEach(k=>{
+      FLOOR_KEYS.forEach(k=>{
         if(!targets[k])return;
         MONTHS.forEach(m=>{if(mo[m][k]<targets[k]*0.5)gaps++;});
       });
@@ -3593,20 +3502,16 @@ function decodePlanNSGA(genome, cropList, st, targets){
   }
   const usedAnnualHa=alloc(annuals,st.annualHa);
   const usedPerennialHa=alloc(perennials,st.perennialHa);
-  const achieved={veg:0,fruit:0,starchy:0,protein:0,oils:0};
+  const achieved=zeroFG();
   selected.forEach(({crop,serves})=>{
-    const fg=effectiveFoodGroup(crop);
-    if(fg==="Vegetables & Legumes")achieved.veg+=serves;
-    else if(fg==="Fruit")achieved.fruit+=serves;
-    else if(fg==="Starches")achieved.starchy+=serves;
-    else if(fg.startsWith("Lean"))achieved.protein+=serves;
-    else if(fg==="Oils & Fats")achieved.oils+=serves;
+    const key=fgToKey(effectiveFoodGroup(crop));
+    if(key && achieved[key]!==undefined) achieved[key]+=serves;
   });
   const usedLabour=selected.reduce((s,{crop,allocHa})=>s+cropLabour(crop,isMech)*allocHa,0);
   // Check food group minimum % constraints
-  const fgMin=st.foodGroupMin||{veg:0,fruit:0,starchy:0,protein:0,oils:0};
+  const fgMin=st.foodGroupMin||{};
   const targets2=calcTotals(st.household);
-  const feasible=["veg","fruit","starchy","protein","oils"].every(k=>{
+  const feasible=FLOOR_KEYS.every(k=>{
     const min=fgMin[k]||0;
     if(!min||!targets2[k])return true;
     return (achieved[k]||0)>=(targets2[k]*(min/100));
@@ -3753,7 +3658,7 @@ function renderParetoDetail(sol,o1k,o2k){
   const o1=PARETO_OBJ[o1k],o2=PARETO_OBJ[o2k];
   const plan=sol.plan;
   const targets=calcTotals(state.household);
-  const fgs=[["Vegetables","veg","tag-veg"],["Fruit","fruit","tag-fruit"],["Starches","starchy","tag-starch"],["Protein","protein","tag-protein"],["Oils","oils","tag-oils"]];
+  const fgs=FG_DISPLAY_ROWS;
   const bars=fgs.map(([l,k,c])=>{
     const p=targets[k]?Math.min(200,Math.round((plan.achieved[k]||0)/targets[k]*100)):0;
     return`<div class="cov-row"><div class="cov-lbl"><span class="tag ${c}">${l}</span></div>
@@ -4008,19 +3913,10 @@ const HERB_EXCLUSIONS = new Set([
   "Basil","Chives","Coriander (Fresh)","Dill","Lemongrass","Mint","Parsley","Parsley (Curly)","Rosemary"
 ]);
 
-const STARCHY_OVERRIDES = new Set([
-  "Potato","Sweet Potato","Sweet Potato (Orange)","Sweet Potato (Purple)","Sweet Potato (White)",
-  "Cassava","Taro","Yam","Arrowroot","Chestnut","Breadfruit","Artichoke (Jerusalem)",
-]);
-
-// Vegetable overrides — crops whose crops.json food_group is wrong or ambiguous
-const VEG_OVERRIDES = new Set(["Olive (Table)"]);
-
+// Food-group overrides are retired: crops.json now carries the authoritative 13-group
+// taxonomy (e.g. Sweet Potato (Orange)→Red/Orange Veg, Chestnut→Nuts & Seeds,
+// Olive (Table)→Other Vegetables). effectiveFoodGroup trusts the data directly.
 function effectiveFoodGroup(crop){
-  if(VEG_OVERRIDES.has(crop.name)) return "Vegetables & Legumes";
-  if(STARCHY_OVERRIDES.has(crop.name)) return "Starches";
-  if(crop.food_group==="Starches") return "Starches";
-  if(crop.food_group==="Grain (Cereal) Foods") return "Starches";
   return crop.food_group;
 }
 
@@ -4317,11 +4213,7 @@ function renderStep1(){
   const householdNRVs = state.household.length > 0 ? householdNRV(state.household) : {};
   const nrvOrder = ["kcal","protein","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
   // ── ADG dietary targets → horizontal bar graph (serves/day per food group) ──
-  const fgList = [
-    ["Vegetables","veg","#6E8C3E"],["Fruit","fruit","#C4823A"],
-    ["Starches","starchy","#A98C38"],["Protein","protein","#9A5A3A"],
-    ["Dairy","dairy","#4E8C84"],["Oils & Fats","oils","#C4A030"],
-  ];
+  const fgList = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].color]);
   const adgMax = Math.max(1, ...fgList.map(([l,k]) => totals[k] || 0));
   // ── ADG dietary targets → pie (donut) of serve composition by food group ──
   const adgSegs = fgList.map(([l,k,col]) => ({label:l, val: totals[k]||0, color: col})).filter(s => s.val > 0.001);
@@ -4502,10 +4394,10 @@ function renderLivestockSelectionPanel(){
   LIVESTOCK_DATA.forEach(ls => {
     const checked = checkedSet.has(ls.name);
     const safeJs = ls.name.replace(/'/g, "\\'");
-    const outStr = ls.outputs.map(o => {
-      const fg = o.food_group === "Dairy" ? "dairy" : o.food_group === "Discretionary" ? "discretionary" : o.food_group === "Oils & Fats" ? "oils" : "protein";
-      return o.name + " (" + fg + ")";
-    }).join(" + ");
+    const outStr = (function(){
+      const fg = ls.food_group === "Dairy" ? "dairy" : ls.food_group === "Discretionary" ? "discretionary" : fgToKey(ls.food_group) || "other";
+      return (ls.edible_part || ls.name) + " (" + fg + ")";
+    })();
     const labourLabel = ls.labour_hrs_per_animal + " hrs/" + ls.unit_label.split('/')[0] + "/yr";
     const spaceLabel = ls.space_m2_per_animal < 10
       ? ls.space_m2_per_animal + " m\u00b2/animal"
@@ -4545,8 +4437,12 @@ function renderStep3(){
   const checkedCount=[...state.checkedCrops].filter(n=>allNames.includes(n)).length;
 
   // Active filter chips
-  const filterGroups=["all","Vegetables & Legumes","Fruit","Starches","Lean Meats, Eggs, Nuts, Seeds & Legumes","Oils & Fats","Perennial","__cool__","__warm__","__livestock__"];
-  const filterLabels={"all":"All","Vegetables & Legumes":"Vegetables","Fruit":"Fruit","Starches":"Starch","Lean Meats, Eggs, Nuts, Seeds & Legumes":"Protein","Oils & Fats":"Oils","Perennial":"Perennial","__cool__":"Cool season","__warm__":"Warm season","__livestock__":"Livestock"};
+  const FG_STRINGS = Object.keys(FG_KEY); // crops.json food_group strings, in taxonomy order
+  const filterGroups=["all", ...FG_STRINGS, "Perennial","__cool__","__warm__","__livestock__"];
+  const filterLabels=Object.assign(
+    {"all":"All","Perennial":"Perennial","__cool__":"Cool season","__warm__":"Warm season","__livestock__":"Livestock"},
+    Object.fromEntries(FG_STRINGS.map(s => [s, FG_DISPLAY[FG_KEY[s]].label]))
+  );
 
   // Filter and search
   let visible=base;
@@ -4598,11 +4494,7 @@ function renderStep3(){
         <select class="cropq-sel" onchange="setCropFilter(this.value)">
           <optgroup label="Food group">
             <option value="all" ${state.cropFilter==="all"?"selected":""}>All groups</option>
-            <option value="Vegetables & Legumes" ${state.cropFilter==="Vegetables & Legumes"?"selected":""}>Vegetables</option>
-            <option value="Fruit" ${state.cropFilter==="Fruit"?"selected":""}>Fruit</option>
-            <option value="Starches" ${state.cropFilter==="Starches"?"selected":""}>Starch</option>
-            <option value="Lean Meats, Eggs, Nuts, Seeds & Legumes" ${state.cropFilter==="Lean Meats, Eggs, Nuts, Seeds & Legumes"?"selected":""}>Protein</option>
-            <option value="Oils & Fats" ${state.cropFilter==="Oils & Fats"?"selected":""}>Oils &amp; Fats</option>
+            ${FG_STRINGS.map(s=>`<option value="${s}" ${state.cropFilter===s?"selected":""}>${FG_DISPLAY[FG_KEY[s]].label}</option>`).join("")}
           </optgroup>
           <optgroup label="Season &amp; type">
             <option value="__warm__" ${state.cropFilter==="__warm__"?"selected":""}>Warm season</option>
@@ -4641,11 +4533,10 @@ function renderParetoStep(){
     `<option value="${k}" ${sel===k?"selected":""} ${k===exclude?"disabled":""}>
       ${o.maximize?"↑":"↓"} ${o.label}</option>`).join("");
 
-  const fgLabels={veg:"Vegetables",fruit:"Fruit",starchy:"Starches",protein:"Protein",oils:"Oils & Fats"};
-  const fgSliders=["veg","fruit","starchy","protein","oils"].map(k=>`
+  const fgSliders=FLOOR_KEYS.map(k=>`
     <div>
       <label style="display:flex;justify-content:space-between">
-        <span>${fgLabels[k]}</span>
+        <span>${FG_DISPLAY[k].label}</span>
         <strong style="color:var(--green)">${state.foodGroupMin[k]||0}% min</strong>
       </label>
       <input type="range" min="0" max="100" step="10" value="${state.foodGroupMin[k]||0}"
@@ -4809,14 +4700,13 @@ function renderStep4(){
 
   // Plan summary
   const totals = calcTotals(state.household);
-  const FG_BAR = {veg:"#6E8C3E",fruit:"#C4823A",starchy:"#A98C38",protein:"#9A5A3A",oils:"#C4A030",dairy:"#5E8C82"};
+  const FG_BAR = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
   const fmtAch = (k) => {
     const t = totals[k] || 0;
-    // Dairy comes from livestock (goats/cows), not crops — fold its serves into achieved.
-    const lsDairy = (k === "dairy") ? (calcLivestockAchieved(p.lsSelected).dairy || 0) : 0;
-    const a = (p.achieved[k] || 0) + lsDairy;
+    // p.achieved already includes livestock serves (allocators credit them), so no extra fold-in.
+    const a = (p.achieved[k] || 0);
     const pct = t > 0 ? Math.round(100 * a / t) : 0;
-    const lbl = ({veg:"Vegetables",fruit:"Fruit",starchy:"Starches",protein:"Protein",oils:"Oils & Fats",dairy:"Dairy"})[k];
+    const lbl = (FG_DISPLAY[k]||{}).label || k;
     return `<div class="adg-row">
       <span class="adg-lbl">${lbl}</span>
       <div class="adg-track"><div class="adg-fill" style="width:${Math.min(100,pct)}%;background:${FG_BAR[k]}"></div></div>
@@ -4972,7 +4862,7 @@ function renderStep4(){
               <legend>Nutrition Coverage</legend>
               <div class="sci-fig-inner">
                 <div class="adg-plot" style="--grid:25%;margin:0">
-                  ${['veg','fruit','starchy','protein','oils','dairy'].map(fmtAch).join("")}
+                  ${FLOOR_KEYS.map(fmtAch).join("")}
                   <div class="adg-axis"><span class="adg-axis-pad"></span><div class="adg-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div><span class="adg-axis-pad"></span></div>
                   <div class="adg-cap">% of daily ADG target serves</div>
                 </div>
@@ -5018,8 +4908,7 @@ function renderStep4(){
           // Group by food group for readability
           const byGrp = {};
           li.monthlyGaps.forEach(g => { (byGrp[g.group] = byGrp[g.group] || []).push(`${g.month.charAt(0).toUpperCase()+g.month.slice(1)} (${g.pct}%)`); });
-          const lbl = {veg:"Vegetables", fruit:"Fruit"};
-          const lines = Object.entries(byGrp).map(([k,arr]) => `<strong>${lbl[k]||k}:</strong> ${arr.join(", ")}`).join("<br>");
+          const lines = Object.entries(byGrp).map(([k,arr]) => `<strong>${(FG_DISPLAY[k]||{}).label||k}:</strong> ${arr.join(", ")}`).join("<br>");
           return `<div style="font-size:12px;margin-top:6px;padding-top:6px;border-top:1px dashed currentColor"><strong>Seasonal variety gaps</strong> (months below 50% of daily target):<br>${lines}</div>`;
         })() : "";
         return `<div class="alert ${li.status === "optimal" ? "alert-info" : "alert-warn"}" style="margin-top:8px">
@@ -5061,7 +4950,7 @@ function renderStep4(){
           </tr>
         </thead>
         <tbody>
-          ${[["Vegetables","veg","tag-veg"],["Fruit","fruit","tag-fruit"],["Starches","starchy","tag-starch"],["Protein","protein","tag-protein"],["Oils","oils","tag-oils"]].map(([lbl,key,cls])=>{
+          ${FG_DISPLAY_ROWS.map(([lbl,key,cls])=>{
             const target = totals[key] || 0;
             if(target <= 0) return "";
             const cells = MONTHS.map(m=>{
@@ -5080,17 +4969,17 @@ function renderStep4(){
       </table>
       ${(()=>{
         const gaps = [];
-        ['veg','fruit'].forEach(key => {
+        PLANT_FRESH_KEYS.forEach(key => {
           const target = totals[key] || 0;
           if(target <= 0) return;
-          const lbl = key === 'veg' ? 'Vegetables' : 'Fruit';
+          const lbl = (FG_DISPLAY[key]||{}).label || key;
           MONTHS.forEach(m => {
             const coverage = p.monthCoverage?.[m]?.[key] || 0;
             const pct = target > 0 ? coverage / target : 0;
             if(pct < 0.5) gaps.push({m: m.charAt(0).toUpperCase()+m.slice(1), grp: lbl, pct: Math.round(pct*100)});
           });
         });
-        if(!gaps.length) return `<div class="alert alert-success" style="margin-top:10px"><strong>Year-round fresh supply</strong> — every month has at least 50% coverage for vegetables and fruit.</div>`;
+        if(!gaps.length) return `<div class="alert alert-success" style="margin-top:10px"><strong>Year-round fresh supply</strong> — every month has at least 50% coverage for all fresh food groups.</div>`;
         const byGrp = {};
         gaps.forEach(g => { (byGrp[g.grp]||(byGrp[g.grp]=[])).push(`${g.m} (${g.pct}%)`); });
         const lines = Object.entries(byGrp).map(([grp, ms]) => `<strong>${grp}:</strong> ${ms.join(", ")}`).join("<br>");
@@ -5151,12 +5040,12 @@ function renderStep4(){
         const spaceM2 = ls.space_m2_per_animal * count;
         const spaceLbl = spaceM2 >= 10000 ? (spaceM2/10000).toFixed(2)+" ha" : Math.round(spaceM2)+" m\u00b2";
         const labourYr = Math.round((ls.labour_hrs_per_animal||0) * count);
-        const outTags = ls.outputs.map(out => {
-          const spd = lsServesPerDay(out, count);
-          const cls = out.food_group === "Dairy" ? "tag-dairy" : out.food_group === "Discretionary" ? "" : out.food_group === "Oils & Fats" ? "tag-oils" : "tag-protein";
-          return `<span class="tag ${cls}" style="font-size:10px">${spd >= 1 ? spd.toFixed(1) : spd.toFixed(2)} srv/day ${out.name}</span>`;
-        }).join(" ");
-        const totalServes = ls.outputs.reduce((s, out) => s + lsServesPerDay(out, count), 0);
+        const outTags = (function(){
+          const spd = lsServesPerDay(ls, count);
+          const cls = lsGroupTagClass(ls.food_group, "tag");
+          return `<span class="tag ${cls}" style="font-size:10px">${spd >= 1 ? spd.toFixed(1) : spd.toFixed(2)} srv/day ${ls.edible_part || ls.name}</span>`;
+        })();
+        const totalServes = lsServesPerDay(ls, count);
         return `<div class="crop-row" style="padding:8px 12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:180px 80px 100px 110px 90px 1fr;gap:10px;align-items:center;font-size:13px;background:#FFF8EC">
           <div><strong>${ls.name}</strong></div>
           <div>${count} ${ls.unit_label}</div>
@@ -5245,9 +5134,9 @@ function getAdjustedPlan(){
   // Recompute totals & monthly coverage from selected
   let usedCoolHaAdj = 0, usedWarmHaAdj = 0, usedLabour = 0;
   let usedCanopy = 0, usedTrees = 0, usedPerennialPlants = 0;
-  const achieved = {veg:0, fruit:0, starchy:0, protein:0, dairy:0, oils:0};
+  const achieved = zeroFG();
   const monthCoverage = {};
-  MONTHS.forEach(m => { monthCoverage[m] = {veg:0,fruit:0,starchy:0,protein:0,dairy:0,oils:0}; });
+  MONTHS.forEach(m => { monthCoverage[m] = zeroFG(); });
 
   selected.forEach(s => {
     if(s.crop.perennial){
@@ -5301,14 +5190,12 @@ function getAdjustedPlan(){
   finalLs.forEach(({ls, count}) => {
     usedPastureHa += ls.space_m2_per_animal * count / 10000;
     usedLabour += (ls.labour_hrs_per_animal || 0) * count;
-    ls.outputs.forEach(out => {
-      const spd = lsServesPerDay(out, count);
-      const key2 = fgToKey(out.food_group);
-      if(key2 && achieved[key2] !== undefined){
-        achieved[key2] += spd;
-        MONTHS.forEach(m => { if(monthCoverage[m][key2] !== undefined) monthCoverage[m][key2] += spd; });
-      }
-    });
+    const spd = lsServesPerDay(ls, count);
+    const key2 = fgToKey(ls.food_group);
+    if(key2 && achieved[key2] !== undefined){
+      achieved[key2] += spd;
+      MONTHS.forEach(m => { if(monthCoverage[m][key2] !== undefined) monthCoverage[m][key2] += spd; });
+    }
   });
 
   // NOTE: usedCoolHaAdj / usedWarmHaAdj are computed from the full `selected`
@@ -5420,7 +5307,7 @@ function renderAdjustSearchResult(){
   // Livestock results (prepended)
   const lsResultsHTML = lsMatches.map(ls => {
     const safe = ls.name.replace(/'/g, "\\'");
-    const outSummary = ls.outputs.map(o => o.name).join(" + ");
+    const outSummary = lsDisplayOutputs(ls).map(o => o.label).join(" + ");
     return `<div style="padding:6px 10px;background:#FFF8EC;border:2px solid #C8AA6E;font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:15px">${ls.icon}</span>
       <strong>${ls.name}</strong> <span class="tag" style="background:#EDE3CB;color:#7A5C00">Livestock</span>
@@ -5503,8 +5390,8 @@ function simulateAnnualConsumption(plan, household, fertility, confidence){
   });
 
   // Aggregate by food group, separating fresh-harvest vs stored contributions
-  const groupMonthly = {veg:[], fruit:[], starchy:[], protein:[], oils:[]};
-  Object.keys(groupMonthly).forEach(k => groupMonthly[k] = MONTHS.map(()=>({fresh:0, stored:0})));
+  const groupMonthly = {};
+  FG_KEYS.forEach(k => groupMonthly[k] = MONTHS.map(()=>({fresh:0, stored:0})));
   
   plan.selected.forEach(s => {
     const key = FG_KEY[effectiveFoodGroup(s.crop)];
@@ -5658,12 +5545,12 @@ function renderStep5(){
 
   function renderLivestockRow({ls, count}) {
     const safeJs = ls.name.replace(/'/g, "\\'");
-    const outTags = ls.outputs.map(out => {
-      const spd = lsServesPerDay(out, count);
+    const outTags = (function(){
+      const spd = lsServesPerDay(ls, count);
       const spdLbl = spd >= 1 ? spd.toFixed(1) : spd.toFixed(2);
-      const cls = out.food_group === "Dairy" ? "dairy-tag" : out.food_group === "Discretionary" ? "disc-tag" : out.food_group === "Oils & Fats" ? "oils-tag" : "";
-      return `<span class="ls-output-tag ${cls}" style="font-size:10px">${spdLbl} srv/day ${out.name}</span>`;
-    }).join("");
+      const cls = lsGroupTagClass(ls.food_group, "ls");
+      return `<span class="ls-output-tag ${cls}" style="font-size:10px">${spdLbl} srv/day ${ls.edible_part || ls.name}</span>`;
+    })();
     const spaceM2 = ls.space_m2_per_animal * count;
     const spaceLbl = spaceM2 >= 10000 ? (spaceM2/10000).toFixed(2)+" ha" : Math.round(spaceM2)+" m\u00b2";
     return `<div class="adj-crop-edit" style="background:var(--card2);border-left:3px solid #8B6914">
@@ -5744,8 +5631,8 @@ function renderStep5(){
   }
 
   // ── Daily target coverage (rail) — compact gauges with 100% marker ──
-  const FG_BAR = {veg:"#6E8C3E",fruit:"#C4823A",starchy:"#A98C38",protein:"#9A5A3A",oils:"#C4A030"};
-  const cgRows = ["veg","fruit","starchy","protein","oils"].map(k => {
+  const FG_BAR = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
+  const cgRows = FLOOR_KEYS.map(k => {
     const target = totals[k] || 0;
     if(target <= 0) return "";
     const actual = p.achieved[k] || 0;
@@ -5758,7 +5645,7 @@ function renderStep5(){
       const arrow = deltaPct > 0 ? "↑" : "↓";
       deltaStr = ` <span class="${cls2}">${arrow}${Math.abs(deltaPct)}</span>`;
     }
-    const labels = {veg:"Vegetables", fruit:"Fruit", starchy:"Starches", protein:"Protein", oils:"Oils & Fats"};
+    const labels = (function(){const o={};FG_KEYS.forEach(kk=>o[kk]=FG_DISPLAY[kk].label);return o;})();
     const valCls = pct >= 100 ? "ok" : "under";
     return `<div class="cg-row">
       <span class="cg-lbl">${labels[k]}</span>
@@ -5805,7 +5692,7 @@ function renderStep5(){
 
   // ── Monthly food availability (right column) ──
   const monthCells = MONTHS.map(m => m.charAt(0).toUpperCase());
-  const monthRows = [["Veg","veg","tag-veg"],["Fruit","fruit","tag-fruit"],["Starches","starchy","tag-starch"],["Protein","protein","tag-protein"],["Oils","oils","tag-oils"]].map(([lbl, key, cls]) => {
+  const monthRows = FLOOR_KEYS.map(k => [FG_DISPLAY[k].short, k, FG_DISPLAY[k].tag]).map(([lbl, key, cls]) => {
     const target = totals[key] || 0;
     if(target <= 0) return "";
     const cells = MONTHS.map(m => {
@@ -5902,8 +5789,8 @@ function renderStep6(){
   const targets = sim.targets;
   
   // ── Annual self-sufficiency stats ──
-  const groups = ["veg","fruit","starchy","protein","oils"];
-  const groupLabels = {veg:"Vegetables", fruit:"Fruit", starchy:"Starches", protein:"Protein", oils:"Oils & Fats"};
+  const groups = FLOOR_KEYS.slice();
+  const groupLabels = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].label);return o;})();
   const monthDays = [31,28,31,30,31,30,31,31,30,31,30,31];
   
   let monthsAllMet = 0, monthsPartialMet = 0;
@@ -5925,7 +5812,7 @@ function renderStep6(){
   const overallPct = totalNeeded > 0 ? Math.round(100 * totalConsumed / totalNeeded) : 0;
   
   // ── Donut chart: annual diet composition by food group ──
-  const groupColors = {veg:"#8FAF60", fruit:"#C4823A", starchy:"#A09373", protein:"#8C4A2A"};
+  const groupColors = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
   const donutData = groups.filter(k => sim.annualByGroup[k] > 0).map(k => ({
     key: k,
     label: groupLabels[k],
@@ -6137,15 +6024,17 @@ function renderStep6(){
           </div>`;
         }).join('');
 
-        // Livestock contributions (year-round)
-        const lsRows = (p.lsSelected||[]).map(({ls,count}) => {
-          const daily = ls.outputs.reduce((s,out) => s + lsServesPerDay(out,count), 0);
-          return `<div class="mb-detail-crop">
+        // Livestock contributions (year-round) — dedicated section, all selected species
+        const lsRows = (p.lsSelected||[])
+          .map(({ls,count}) => {
+            const daily = lsServesPerDay(ls, count);
+            if(daily < 0.01) return '';
+            return `<div class="mb-detail-crop">
             <span class="mb-detail-badge mb-ls-badge">LIVESTOCK</span>
             <span style="flex:1">${ls.name}</span>
             <span class="mb-detail-srv">${daily.toFixed(1)} srv/day</span>
           </div>`;
-        }).join('');
+          }).join('');
 
         return `<div class="mb-detail" style="margin-top:12px;padding:12px;background:var(--card2);border:2px solid var(--green-lt)">
           <div class="mb-detail-header">
@@ -6317,15 +6206,6 @@ function renderStepDB(){
   const MON_LBL = ["J","F","M","A","M","J","J","A","S","O","N","D"];
 
   // ── Filter & sort crops ──────────────────────────────────────────────────
-  const FG_KEYS = {
-    "all":"All",
-    "veg":"Vegetables",
-    "fruit":"Fruit",
-    "starchy":"Starches",
-    "protein":"Protein",
-    "perennial":"Perennial",
-    "annual":"Annual",
-  };
   let crops = [...CROP_DATA];
   if(q) crops = crops.filter(c =>
     c.name.toLowerCase().includes(q) ||
@@ -6333,12 +6213,10 @@ function renderStepDB(){
     (c.edible_part||"").toLowerCase().includes(q) ||
     (c.cliz||[]).some(z => z.toLowerCase().includes(q))
   );
-  if(state.dbFilter === "veg")       crops = crops.filter(c => c.food_group === "Vegetables & Legumes");
-  if(state.dbFilter === "fruit")     crops = crops.filter(c => c.food_group === "Fruit");
-  if(state.dbFilter === "starchy")   crops = crops.filter(c => c.food_group === "Grain (Cereal) Foods");
-  if(state.dbFilter === "protein")   crops = crops.filter(c => c.food_group.startsWith("Lean Meats"));
-  if(state.dbFilter === "perennial") crops = crops.filter(c => c.perennial);
-  if(state.dbFilter === "annual")    crops = crops.filter(c => !c.perennial);
+  if(state.dbFilter === "perennial")      crops = crops.filter(c => c.perennial);
+  else if(state.dbFilter === "annual")    crops = crops.filter(c => !c.perennial);
+  else if(state.dbFilter && state.dbFilter !== "all")
+    crops = crops.filter(c => fgToKey(c.food_group) === state.dbFilter);
 
   const sortKey = state.dbSort||"name";
   const desc = sortKey.endsWith("_desc");
@@ -6356,10 +6234,7 @@ function renderStepDB(){
   // ── Toolbar ───────────────────────────────────────────────────────────────
   const filterSel = `<select class="cropq-sel" onchange="dbSetFilter(this.value)" style="min-width:140px">
     <option value="all" ${(state.dbFilter||"all")==="all"?"selected":""}>All crops</option>
-    <option value="veg" ${state.dbFilter==="veg"?"selected":""}>Vegetables</option>
-    <option value="fruit" ${state.dbFilter==="fruit"?"selected":""}>Fruit</option>
-    <option value="starchy" ${state.dbFilter==="starchy"?"selected":""}>Starches</option>
-    <option value="protein" ${state.dbFilter==="protein"?"selected":""}>Protein</option>
+    ${FLOOR_KEYS.concat(["herbs","discretionary"]).map(k=>`<option value="${k}" ${state.dbFilter===k?"selected":""}>${FG_DISPLAY[k].label}</option>`).join("")}
     <option value="perennial" ${state.dbFilter==="perennial"?"selected":""}>Perennial</option>
     <option value="annual" ${state.dbFilter==="annual"?"selected":""}>Annual</option>
   </select>`;
@@ -6406,7 +6281,7 @@ function renderStepDB(){
       const soils = (c.text_tol||[]).join(" · ") || "—";
       return `<div class="db-compact-row">
         <div><strong>${c.name}</strong> ${c.perennial?'<span style="font-size:9px;color:#8B6914">·</span>':''}</div>
-        <div style="color:var(--text-mid)">${c.food_group?.replace("Lean Meats, Eggs, Nuts, Seeds & Legumes","Protein").replace("Vegetables & Legumes","Veg").replace("Grain (Cereal) Foods","Starch")||"—"}</div>
+        <div style="color:var(--text-mid)">${(FG_SHORT[c.food_group]||c.food_group)||"—"}</div>
         <div style="font-weight:600;color:var(--green-dk)">${yieldStr}</div>
         <div style="color:var(--text-mid)">${c.labour_hand||"?"}h/ha</div>
         <div style="font-size:10px;color:var(--text-mid)">${zones} · ${harv}</div>
@@ -6447,12 +6322,12 @@ function renderStepDB(){
       <button class="db-view-btn ${state.dbShowLivestock?'active':''}" onclick="dbToggleLS()">${state.dbShowLivestock?'Hide':'Show'}</button>
     </div>
     ${state.dbShowLivestock ? `<div class="db-cards" style="margin-top:12px">${LIVESTOCK_DATA.map(ls => {
-      const outTags = ls.outputs.map(out => {
+      const outTags = lsDisplayOutputs(ls).map(out => {
         const nutStr = out.nut ? [["kcal","kcal"],["protein","pro"],["fe","Fe"],["ca","Ca"],["vitD","vit D"],["b12","B12"]]
           .filter(([k])=>out.nut[k]!=null&&out.nut[k]>0).map(([k,l])=>`<span class="db-nut-pill">${l}: ${out.nut[k]}</span>`).join("") : "";
         return `<div style="margin-top:6px;padding:6px 8px;background:var(--card2);font-size:11px">
-          <strong>${out.name}</strong> <span class="tag" style="font-size:9px">${out.food_group}</span><br>
-          <span style="color:var(--text-mid)">${out.qty_per_animal_yr.toLocaleString()} ${out.unit}/animal/yr · serve ${out.serve_g}g</span><br>
+          <strong>${out.label}</strong> <span class="tag" style="font-size:9px">${out.food_group || "byproduct (fat)"}</span><br>
+          <span style="color:var(--text-mid)">${(out.qty_per_animal_yr||0).toLocaleString()} ${out.unit}/animal/yr${out.serve_g ? " · serve "+out.serve_g+"g" : ""}</span><br>
           <div style="margin-top:3px">${nutStr}</div>
         </div>`;
       }).join("");
@@ -6774,7 +6649,10 @@ function renderApp(){
   try{
     const r = await fetch('crops.json');
     if(!r.ok) throw new Error('HTTP '+r.status);
-    CROP_DATA = await r.json();
+    const allData = await r.json();
+    LIVESTOCK_DATA = allData.filter(c => c.is_livestock === true);
+    CROP_DATA = allData.filter(c => !c.is_livestock);
+    ensureCheckedLivestock();
   }catch(e){
     if(appEl) appEl.innerHTML = '<div style="padding:40px;text-align:center"><p style="color:red;font-weight:600">Failed to load crop database.</p><p style="color:var(--text-mid)">Please refresh the page. If running locally, open via a web server or GitHub Pages.</p><p style="font-size:11px;color:var(--text-mid)">Error: '+e.message+'</p></div>';
     return;
