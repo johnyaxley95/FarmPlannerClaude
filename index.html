@@ -1409,9 +1409,15 @@ const FG_INSEASON_CAP_PER_PERSON = {
 };
 // Soft diversity bonus: gently rewards adding a NEW crop to a group, fading as the group
 // already has several crops (self-limiting — nudges toward variety without forcing an
-// impractical count). 0 = off. Applied to the scoring tiebreaker, never overrides gap-fill.
-// `strength` scales the bonus; `fade` controls how fast it decays per crop already chosen.
-const DIVERSITY_BONUS = { strength: 0.35, fade: 0.55 };
+// impractical count). 0 = off. Applied to allocation sizing, never overrides gap-fill.
+// `strength` = how much the first crop's allocation is trimmed (so the group recruits more);
+// `fade` = decay per crop already chosen (lower fade = effect dies faster).
+// Per-group overrides allowed; `default` applies to any fresh group not listed.
+const DIVERSITY_BONUS = {
+  default: { strength: 0.35, fade: 0.55 },
+  fruit:   { strength: 0.6,  fade: 0.75 },   // fruit: push harder — more variety preferred
+};
+function diversityCfg(key){ return DIVERSITY_BONUS[key] || DIVERSITY_BONUS.default; }
 // Split the legacy ADG 6-value serves ({veg,fruit,starchy,protein,dairy,oils}) across 13 keys,
 // preserving total serving quantity. Ratios are sensible defaults (refine later if desired).
 function splitADG(a){
@@ -2634,10 +2640,13 @@ function generatePlan(s){
         // recruits another, fading as crops accumulate. self-limiting — by the 3rd+ crop the
         // factor is ~1 (no effect), so it never forces an impractical count. Storables are
         // exempt (we want them consolidated to efficient sources).
-        if(isFresh && DIVERSITY_BONUS.strength > 0 && !sufficient){
-          const priorCrops = Math.max(0, usedNames.size - 1);  // crops already in this group
-          const trim = DIVERSITY_BONUS.strength * Math.pow(DIVERSITY_BONUS.fade, priorCrops);
-          wantServes *= (1 - trim);
+        if(isFresh && !sufficient){
+          const dcfg = diversityCfg(key);
+          if(dcfg.strength > 0){
+            const priorCrops = Math.max(0, usedNames.size - 1);  // crops already in this group
+            const trim = dcfg.strength * Math.pow(dcfg.fade, priorCrops);
+            wantServes *= (1 - trim);
+          }
         }
         // Per-group in-season cap: limit this crop's serves/day WHILE SUPPLYING to
         // capPerPerson × household. In annual-average terms that's the cap × covFrac
@@ -3787,7 +3796,7 @@ function landCompositionFigure(s, p){
   const layerDefs = [
     {key:"canopy", label:"Canopy (≥25m)", color:LAYER_COLORS_BAR.canopy},
     {key:"trees",  label:"Trees (4–24m)", color:LAYER_COLORS_BAR.trees},
-    {key:"plants", label:"Plants (<4m)",  color:LAYER_COLORS_BAR.plants},
+    {key:"plants", label:"Shrubs (<4m)",  color:LAYER_COLORS_BAR.plants},
   ];
 
   // Build perennial segment as a vertical stack of 3 rows (10px each = 30px total)
@@ -4032,11 +4041,20 @@ function plantCount(crop, allocHa){
   // For perennial crops always show at least 1 plant (they are individually planted and never zero)
   const rawCount = Math.round(areaSqm / (spacing * spacing));
   const plants = crop.perennial ? Math.max(1, rawCount) : rawCount;
-  // Label by size category
-  let typeLabel = "plants";
-  if(w >= 5) typeLabel = "trees";
-  else if(w >= 2) typeLabel = "trees/shrubs";
-  else if(w >= 1) typeLabel = "plants/shrubs";
+  const plural = plants === 1;
+  // Label by perennial layer for perennials (canopy/trees/plants); by width for annuals.
+  let typeLabel;
+  if(crop.perennial){
+    const layer = cropLayer(crop);
+    if(layer === "canopy")      typeLabel = plural ? "large tree" : "large trees";
+    else if(layer === "trees")  typeLabel = plural ? "tree" : "trees";
+    else                        typeLabel = "plants/shrubs";
+  } else {
+    typeLabel = "plants";
+    if(w >= 5) typeLabel = "trees";
+    else if(w >= 2) typeLabel = "trees/shrubs";
+    else if(w >= 1) typeLabel = "plants/shrubs";
+  }
   const spacingLabel = spacing >= 1 ? spacing.toFixed(1)+"m" : Math.round(spacing*100)+"cm";
   return{label: plants.toLocaleString()+" "+typeLabel, note:spacingLabel+" spacing"};
 }
@@ -4051,7 +4069,7 @@ function cropLayer(crop){
   if(h >= 4)  return "trees";     // 4–24m — typical orchard fruit trees
   return "plants";                 // <4m — shrubs, vines, annuals
 }
-const LAYER_LABELS = {canopy:"Canopy (≥25m)", trees:"Trees (4–24m)", plants:"Plants (<4m)"};
+const LAYER_LABELS = {canopy:"Canopy (≥25m)", trees:"Trees (4–24m)", plants:"Shrubs (<4m)"};
 const LAYER_COLORS = {canopy:"#3D5226", trees:"#5C7A3A", plants:"#8FAF60"};
 
 // ── Planning objectives (3 toggles, on/off) ─────────────────────────────
@@ -4848,7 +4866,7 @@ function renderStep4(){
         const pLayerDefs = [
           {key:"canopy", label:"Canopy ≥25m", color: LAYER_COLORS.canopy},
           {key:"trees",  label:"Trees 4–24m",  color: LAYER_COLORS.trees},
-          {key:"plants", label:"Plants  <4m",  color: LAYER_COLORS.plants},
+          {key:"plants", label:"Shrubs  <4m",  color: LAYER_COLORS.plants},
         ];
         const pLayers = p.layers || {canopy:0, trees:0, plants:0};
         const pBud = state.perennialHa;
