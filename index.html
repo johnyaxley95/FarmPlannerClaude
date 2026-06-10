@@ -5304,6 +5304,9 @@ function removeCropFromPlan(cropName){
   if(!state.planAdjustments) state.planAdjustments = {};
   state.planAdjustments[cropName] = { ...(state.planAdjustments[cropName]||{}), removed: true };
   renderApp();
+  // Keep the add-search usable right after removing (restore focus + caret)
+  const si = document.getElementById("adjustSearchInput");
+  if(si){ si.focus(); const v = si.value; si.value = ""; si.value = v; }
 }
 
 function undoRemoveCrop(cropName){
@@ -5351,7 +5354,7 @@ function addCropFromSearch(name, specificHa){
 
 function setAdjustSearch(val){
   state.adjustSearch = val;
-  // Only re-render the suggestion list in-place
+  // Only re-render the suggestion list in-place (keeps the input focused)
   const target = document.getElementById("adjustSearchResult");
   if(target) target.innerHTML = renderAdjustSearchResult();
 }
@@ -5385,7 +5388,6 @@ function renderAdjustSearchResult(){
     const safe = ls.name.replace(/'/g, "\\'");
     const outSummary = lsDisplayOutputs(ls).map(o => o.label).join(" + ");
     return `<div style="padding:6px 10px;background:#FFF8EC;border:2px solid #C8AA6E;font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:15px">${ls.icon}</span>
       <strong>${ls.name}</strong> <span class="tag" style="background:#EDE3CB;color:#7A5C00">Livestock</span>
       <span style="color:var(--text-mid)">${outSummary} · min ${ls.min_count} ${ls.unit_label} · ${ls.space_m2_per_animal} m²/animal</span>
       <button class="btn btn-sec" style="font-size:11px;padding:3px 9px;margin-left:auto" onclick="addCropFromSearch('${safe}')">+ Add</button>
@@ -5541,7 +5543,7 @@ function renderStep5(){
       ${compactBudgetStrip(state, p)}
       <div style="display:flex;align-items:center;gap:7px;padding:4px 0 0 0">
         <span style="font-size:11px;color:var(--green-dk);font-weight:700;white-space:nowrap;flex-shrink:0">＋ add to plan</span>
-        <input placeholder="Search crops &amp; livestock to add…" value="${state.adjustSearch||""}" oninput="setAdjustSearch(this.value)"
+        <input id="adjustSearchInput" placeholder="Search crops &amp; livestock to add…" value="${state.adjustSearch||""}" oninput="setAdjustSearch(this.value)"
           style="flex:1;padding:3px 8px;border:1px solid;border-color:var(--dark) var(--hl) var(--hl) var(--dark);background:var(--field);font-size:12px;font-family:inherit;box-shadow:inset 1px 1px 0 var(--shadow)"/>
       </div>
     </div>`;
