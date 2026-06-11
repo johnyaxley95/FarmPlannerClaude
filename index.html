@@ -922,33 +922,6 @@ body{font-size:var(--den-fs)!important}
 :root[data-finish="flat"] .adg-track,:root[data-finish="flat"] .cov-bar-bg{box-shadow:none!important;border:1px solid var(--border)!important}
 :root[data-finish="flat"] .sci-tbtn:hover{box-shadow:none;border-color:transparent;background:var(--card2)}
 
-/* ── Tweaks panel (floating mini-window) ──────────────────────────────── */
-#tweaks-panel{position:fixed;right:16px;bottom:16px;width:240px;z-index:9000;
-  background:var(--card);border:1px solid;border-color:var(--hl) var(--darker) var(--darker) var(--hl);
-  box-shadow:inset 1px 1px 0 #EFE9D8, 4px 4px 14px rgba(20,14,6,.4);font-family:var(--ui);padding:3px}
-#tweaks-panel .twk-title{height:24px;display:flex;align-items:center;gap:6px;padding:0 4px 0 8px;
-  background:linear-gradient(to right,var(--accent1),var(--accent2));color:#fff;font-weight:700;font-size:12px}
-#tweaks-panel .twk-title span{flex:1;text-shadow:1px 1px 0 rgba(0,0,0,.4)}
-#tweaks-panel .twk-x{width:18px;height:16px;flex:0 0 auto;background:var(--card);color:var(--text);
-  border:1px solid;border-color:var(--hl) var(--darker) var(--darker) var(--hl);font-size:9px;
-  font-weight:700;cursor:pointer;line-height:1}
-#tweaks-panel .twk-body{padding:10px 10px 11px}
-#tweaks-panel .twk-group{margin-bottom:11px}
-#tweaks-panel .twk-group:last-child{margin-bottom:0}
-#tweaks-panel .twk-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-  color:var(--green-dk);margin-bottom:5px}
-#tweaks-panel .twk-seg{display:flex;gap:0}
-#tweaks-panel .twk-opt{flex:1;padding:5px 4px;font-family:var(--ui);font-size:11px;cursor:pointer;
-  background:var(--card2);color:var(--text-mid);border:1px solid;
-  border-color:var(--hl) var(--darker) var(--darker) var(--hl);border-right-width:0}
-#tweaks-panel .twk-opt:last-child{border-right-width:1px}
-#tweaks-panel .twk-opt.on{background:var(--green);color:#fff;
-  border-color:var(--green-dk) var(--green-lt) var(--green-lt) var(--green-dk);
-  box-shadow:inset 1px 1px 0 rgba(0,0,0,.15)}
-#tweaks-panel .twk-sw{display:flex;gap:6px}
-#tweaks-panel .twk-swb{width:34px;height:26px;cursor:pointer;border:1px solid;
-  border-color:var(--hl) var(--darker) var(--darker) var(--hl)}
-#tweaks-panel .twk-swb.on{outline:2px solid var(--text);outline-offset:1px}
 
 /* ── Crop-selection DATA GRID ─────────────────────────────────────────── */
 .cropq-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;
@@ -1293,12 +1266,12 @@ fieldset.sci-fig > legend{font-family:var(--ui);font-weight:700;font-size:11px;
         <p class="card-desc">Total weekly farm hours across household members.</p>
         <div class="field-row">
           <span class="field-label">Hours per week</span>
-          <input type="number" min="1" max="200" value="20" style="width:90px" onchange="state.hoursPerWeek=Math.max(1,+this.value);renderApp()">
+          <input type="number" min="1" max="200" value="20" style="width:90px" onchange="state.hoursPerWeek=Math.max(1,+this.value);state.plan=null;renderApp()">
           <span style="font-size:12px;color:var(--text-mid)">= <strong>1,040</strong> hrs/year</span>
         </div>
         <div class="field-row">
           <span class="field-label">Labour system</span>
-          <select onchange="state.labourSystem=this.value">
+          <select onchange="state.labourSystem=this.value;state.plan=null">
             <option value="hand" selected="">Manual / smallholder (hand tools)</option>
             <option value="mech">Mechanised (tractor-assisted)</option>
           </select>
@@ -1328,7 +1301,7 @@ fieldset.sci-fig > legend{font-family:var(--ui);font-weight:700;font-size:11px;
         <span class="sci-sb grow">Household</span>
         <span class="sci-sb"><i class="sb-dot"></i>Zone: <b>Cs</b></span>
         <span class="sci-sb">Selected: <b>151</b> crops</span>
-        <span class="sci-sb">DB: <b>190</b> records</span>
+        <span class="sci-sb">DB: <b>&mdash;</b> records</span>
         <span class="sci-sb">ADG · BOM · EcoCrop</span>
       </div>
     </div></div>
@@ -1370,6 +1343,17 @@ const ZONES = [
 
 const MONTHS=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 const MONTH_INITIALS=["J","F","M","A","M","J","J","A","S","O","N","D"];
+const MONTH_NAMES=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// Escape a name for safe interpolation inside single-quoted JS strings within
+// double-quoted inline HTML event handlers (single source of truth - use everywhere).
+function escJs(s){return String(s).replace(/\\/g,"\\\\").replace(/\x27/g,"\\\x27").replace(/"/g,"&quot;")}
+// Broadcast/drill-sown crops shown as row-metres rather than plant counts.
+// Single source of truth for plantCount / plantsToHa / plantUnit.
+const BROADCAST_CROPS = new Set(["Wheat (Whole)","Barley (Pearl)","Rye (Grain)","Oats (Rolled)","Spelt",
+  "Triticale","Rice (White)","Rice (Brown)","Rice (Wild)","Sorghum","Millet","Buckwheat",
+  "Quinoa","Amaranth (Grain)","Teff","Fonio","African Rice","Corn (Sweet)","Sago",
+  "Linseed / Flaxseed","Sesame Seed","Chia Seed","Hemp Seed","Sunflower Seed",
+  "Onion (Spring)"]);
 // ── 12-group dietary taxonomy (grain+tubers merged into 'starches') ──────────
 // Internal keys (replaces the old 6-group veg/fruit/starchy/protein/dairy/oils).
 const FG_KEYS=["darkgreen","redorange","othervet","starches","fruit",
@@ -1400,6 +1384,8 @@ const FG_DISPLAY = {
 };
 // Floored groups only, for display rows that should skip herbs/discretionary unless present.
 const FG_DISPLAY_ROWS = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].tag]);
+// Bar colours per internal food-group key (shared by Step 4 and Step 5 charts).
+const FG_BAR = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
 // Per-crop IN-SEASON daily-rate cap, in serves per person, applied while a crop is
 // supplying (harvest + storage window). null = no cap. Set per group to limit how much
 // any single crop can dominate its active season — forcing more crops in for diversity.
@@ -2449,7 +2435,7 @@ function generatePlan(s){
     if(crop.byproducts && crop.byproducts.length){
       crop.byproducts.forEach(bp => {
         const bpYieldTha = adjY * (bp.yield_fraction || 0);
-        const bpServesYr = allocHa * bpYieldTha * 1e6 / 75;
+        const bpServesYr = allocHa * bpYieldTha * 1e6 / (bp.serve_g || crop.serve_g || 75);
         const bpKey = fgToKey(bp.food_group);
         if(bpKey && achieved[bpKey] !== undefined){
           achieved[bpKey] += bpServesYr / 365;
@@ -4079,12 +4065,7 @@ function plantCount(crop, allocHa){
   const areaSqm = allocHa * 10000;
   // Use w_max as centre-to-centre spacing; plant footprint = w × w
   // For broadcast/drill-sown crops (grains, small seeds, onion spring) show row metres instead
-  const BROADCAST_CROPS = ["Wheat (Whole)","Barley (Pearl)","Rye (Grain)","Oats (Rolled)","Spelt",
-    "Triticale","Rice (White)","Rice (Brown)","Rice (Wild)","Sorghum","Millet","Buckwheat",
-    "Quinoa","Amaranth (Grain)","Teff","Fonio","African Rice","Corn (Sweet)","Sago",
-    "Linseed / Flaxseed","Sesame Seed","Chia Seed","Hemp Seed","Sunflower Seed",
-    "Onion (Spring)"];
-  if(BROADCAST_CROPS.includes(crop.name)){
+  if(BROADCAST_CROPS.has(crop.name)){
     // Express as row metres (rows 30cm apart for fine grain, 50cm for large)
     const rowSpacing = w <= 0.3 ? 0.3 : 0.5;
     const rowMetres = Math.round(areaSqm / rowSpacing);
@@ -4209,8 +4190,7 @@ function setCropSort(col){
 }
 
 function buildCropList(crops){
-  const MK = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
-  const ML = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  const MK = MONTHS, ML = MONTH_INITIALS;
   const isMech = state.labourSystem === "mech";
   const s = state.cropSelSort || {col:"suit",dir:"desc"};
   const arr = col => s.col===col ? (s.dir==="asc" ? " ▲" : " ▼") : "";
@@ -4234,7 +4214,7 @@ function buildCropList(crops){
     const suit    = isSuitable(c);
     const fg      = effectiveFoodGroup(c);
     const latin   = c.latin || CROP_LATIN[c.name] || "";
-    const safeTog = c.name.replace(/'/g,"&#39;");
+    const safeTog = escJs(c.name);
     const yld     = subsistYield(c,state.fertility,state.confidence);
     const yldStr  = yld>0 ? yld.toFixed(1) : "—";
     const lab     = cropLabour(c,isMech);
@@ -4389,12 +4369,12 @@ function renderStep1(){
         <p class="card-desc">Total weekly farm hours across household members.</p>
         <div class="field-row">
           <span class="field-label">Hours per week</span>
-          <input type="number" min="1" max="200" value="${state.hoursPerWeek}" style="width:90px" onchange="state.hoursPerWeek=Math.max(1,+this.value);renderApp()"/>
+          <input type="number" min="1" max="200" value="${state.hoursPerWeek}" style="width:90px" onchange="state.hoursPerWeek=Math.max(1,+this.value);state.plan=null;renderApp()"/>
           <span style="font-size:12px;color:var(--text-mid)">= <strong>${annual.toLocaleString()}</strong> hrs/year</span>
         </div>
         <div class="field-row">
           <span class="field-label">Labour system</span>
-          <select onchange="state.labourSystem=this.value">
+          <select onchange="state.labourSystem=this.value;state.plan=null">
             <option value="hand" ${state.labourSystem==="hand"?"selected":""}>Manual / smallholder (hand tools)</option>
             <option value="mech" ${state.labourSystem==="mech"?"selected":""}>Mechanised (tractor-assisted)</option>
           </select>
@@ -4449,20 +4429,20 @@ function renderStep2(){
       <p class="card-desc">Climate zone, soil type, and water availability. Determines which crops are suitable.</p>
       <div style="margin-bottom:12px">
         <label>Climate zone (Köppen)</label>
-        <select onchange="state.climateZone=this.value;state.checkedCrops=null;renderApp()" style="width:100%">${zoneOpts}</select>
+        <select onchange="state.climateZone=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">${zoneOpts}</select>
         ${activeZone?`<div style="font-size:11px;color:var(--text-mid);margin-top:3px">${activeZone.sub}</div>`:""}
       </div>
       <div style="margin-bottom:12px">
         <label>Soil texture</label>
-        <select onchange="state.soilTexture=this.value;state.checkedCrops=null;renderApp()" style="width:100%">${texOpts}</select>
+        <select onchange="state.soilTexture=this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100%">${texOpts}</select>
       </div>
       <div style="margin-bottom:12px">
         <label>Annual rainfall (mm)</label>
         <div style="display:flex;align-items:center;gap:10px">
-          <input type="number" min="0" max="5000" step="50" value="${state.annualRainfall}" oninput="state.annualRainfall=+this.value;state.checkedCrops=null;renderApp()" style="width:100px"/>
+          <input type="number" min="0" max="5000" step="50" value="${state.annualRainfall}" oninput="state.annualRainfall=+this.value;state.checkedCrops=null;state.plan=null;renderApp()" style="width:100px"/>
           <label style="display:flex;align-items:center;gap:5px;font-weight:normal;font-size:12px;cursor:pointer;white-space:nowrap">
             <input type="checkbox" ${state.hasIrrigation?"checked":""} style="margin:0"
-              onchange="state.hasIrrigation=this.checked;state.checkedCrops=null;renderApp()"/>
+              onchange="state.hasIrrigation=this.checked;state.checkedCrops=null;state.plan=null;renderApp()"/>
             Irrigation available
           </label>
         </div>
@@ -4470,7 +4450,7 @@ function renderStep2(){
       </div>
       <div style="margin-bottom:12px">
         <label>Soil fertility</label>
-        <select onchange="state.fertility=this.value" style="width:100%">
+        <select onchange="state.fertility=this.value;state.plan=null" style="width:100%">
           <option value="low"    ${state.fertility==="low"   ?"selected":""}>Low — poor / depleted</option>
           <option value="medium" ${state.fertility==="medium"?"selected":""}>Medium — average</option>
           <option value="high"   ${state.fertility==="high"  ?"selected":""}>High — rich / improved</option>
@@ -4478,7 +4458,7 @@ function renderStep2(){
       </div>
       <div>
         <label>Yield confidence — ${state.confidence}%</label>
-        <input type="range" min="20" max="100" step="5" value="${state.confidence}" oninput="state.confidence=+this.value;this.previousElementSibling.textContent='Yield confidence — '+this.value+'%'" style="width:100%"/>
+        <input type="range" min="20" max="100" step="5" value="${state.confidence}" oninput="state.confidence=+this.value;state.plan=null;this.previousElementSibling.textContent='Yield confidence — '+this.value+'%'" style="width:100%"/>
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">60% recommended for first-year plans.</div>
       </div>
     </div>
@@ -4489,31 +4469,31 @@ function renderStep2(){
       <div style="padding:9px 11px;background:var(--bg2);border:1px solid var(--border-lt);margin-bottom:12px">
         <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:normal">
           <input type="checkbox" ${state.landFixed!==false?"checked":""} style="margin-top:2px;flex-shrink:0"
-            onchange="state.landFixed=this.checked;renderApp()"/>
+            onchange="state.landFixed=this.checked;state.plan=null;renderApp()"/>
           <span style="flex:1;min-width:0">
             <strong style="font-size:12px">Fixed land allocation</strong>
-            <span class="card-desc" style="display:block;margin-top:2px">When ticked, the algorithm keeps crops within the area types below. When unticked, it draws freely from the combined total.</span>
+            <span class="card-desc" style="display:block;margin-top:2px;text-transform:none;letter-spacing:normal">When ticked, the algorithm keeps crops within the area types below. When unticked, it draws freely from the combined total.</span>
           </span>
         </label>
       </div>
       <div style="margin-bottom:12px">
         <label>Annual crop area (ha)</label>
-        <input type="number" min="0" step="0.05" value="${state.annualHa}" onchange="state.annualHa=+this.value" style="width:100%"/>
+        <input type="number" min="0" step="0.05" value="${state.annualHa}" onchange="state.annualHa=+this.value;state.plan=null" style="width:100%"/>
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Vegetables, grains, legumes</div>
       </div>
       <div style="margin-bottom:12px">
         <label>Perennial / orchard area (ha)</label>
-        <input type="number" min="0" step="0.05" value="${state.perennialHa}" onchange="state.perennialHa=+this.value" style="width:100%"/>
+        <input type="number" min="0" step="0.05" value="${state.perennialHa}" onchange="state.perennialHa=+this.value;state.plan=null" style="width:100%"/>
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Trees, shrubs, food forest layers</div>
       </div>
       <div style="margin-bottom:12px">
         <label>Pasture area (ha)</label>
-        <input type="number" min="0" step="0.05" value="${state.pastureHa||0}" onchange="state.pastureHa=+this.value;renderApp()" style="width:100%"/>
+        <input type="number" min="0" step="0.05" value="${state.pastureHa||0}" onchange="state.pastureHa=+this.value;state.plan=null;renderApp()" style="width:100%"/>
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Grazing — poultry, ruminants, pigs, bees</div>
       </div>
       <div style="margin-bottom:12px">
         <label>Surface water area (ha)</label>
-        <input type="number" min="0" step="0.01" value="${state.surfaceWaterHa||0}" onchange="state.surfaceWaterHa=+this.value;renderApp()" style="width:100%"/>
+        <input type="number" min="0" step="0.01" value="${state.surfaceWaterHa||0}" onchange="state.surfaceWaterHa=+this.value;state.plan=null;renderApp()" style="width:100%"/>
         <div style="font-size:11px;color:var(--text-mid);margin-top:2px">Pond / dam / tank — fish and aquatic crops</div>
       </div>
     </div>
@@ -4526,7 +4506,7 @@ function renderLivestockSelectionPanel(){
   let rows = "";
   LIVESTOCK_DATA.forEach(ls => {
     const checked = checkedSet.has(ls.name);
-    const safeJs = ls.name.replace(/'/g, "\\'");
+    const safeJs = escJs(ls.name);
     const outStr = (function(){
       const fg = ls.food_group === "Dairy" ? "dairy" : ls.food_group === "Discretionary" ? "discretionary" : fgToKey(ls.food_group) || "other";
       return (ls.edible_part || ls.name) + " (" + fg + ")";
@@ -4597,7 +4577,7 @@ function renderStep3(){
   const rows=visible.map(crop=>{
     const checked=state.checkedCrops.has(crop.name);
     return`<tr class="${checked?"":"unchecked"}">
-      <td class="center sel-cb"><input type="checkbox" ${checked?"checked":""} onchange="toggleCrop('${crop.name.replace(/'/g,"\'")}',this.checked)" title="Include in farm plan"/></td>
+      <td class="center sel-cb"><input type="checkbox" ${checked?"checked":""} onchange="toggleCrop('${escJs(crop.name)}',this.checked)" title="Include in farm plan"/></td>
       <td><span class="crop-sel-name" style="font-weight:500;font-size:12px">${crop.name}</span></td>
       <td class="hide-sm">${tag(effectiveFoodGroup(crop))}</td>
       <td class="center hide-sm">${crop.perennial?'<span class="badge-perennial">Perennial</span>':'<span class="badge-annual">Annual</span>'}</td>
@@ -4833,7 +4813,6 @@ function renderStep4(){
 
   // Plan summary
   const totals = calcTotals(state.household);
-  const FG_BAR = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
   const fmtAch = (k) => {
     const t = totals[k] || 0;
     // p.achieved already includes livestock serves (allocators credit them), so no extra fold-in.
@@ -5230,12 +5209,7 @@ function renderStep4(){
 function plantsToHa(crop, count){
   const w = crop.w_max;
   if(!w || w <= 0 || count <= 0) return 0;
-  const BROADCAST_CROPS = ["Wheat (Whole)","Barley (Pearl)","Rye (Grain)","Oats (Rolled)","Spelt",
-    "Triticale","Rice (White)","Rice (Brown)","Rice (Wild)","Sorghum","Millet","Buckwheat",
-    "Quinoa","Amaranth (Grain)","Teff","Fonio","African Rice","Corn (Sweet)","Sago",
-    "Linseed / Flaxseed","Sesame Seed","Chia Seed","Hemp Seed","Sunflower Seed",
-    "Onion (Spring)"];
-  if(BROADCAST_CROPS.includes(crop.name)){
+  if(BROADCAST_CROPS.has(crop.name)){
     const rowSpacing = w <= 0.3 ? 0.3 : 0.5;
     return (count * rowSpacing) / 10000;
   }
@@ -5247,11 +5221,7 @@ function plantsToHa(crop, count){
 function plantUnit(crop){
   const w = crop.w_max;
   if(!w || w <= 0) return "—";
-  const BROADCAST_CROPS = ["Wheat (Whole)","Barley (Pearl)","Rye (Grain)","Oats (Rolled)","Spelt",
-    "Triticale","Rice (White)","Rice (Brown)","Rice (Wild)","Sorghum","Millet","Buckwheat",
-    "Quinoa","Amaranth (Grain)","Teff","Fonio","African Rice","Corn (Sweet)","Sago",
-    "Linseed / Flaxseed","Sesame Seed","Chia Seed","Hemp Seed","Sunflower Seed","Onion (Spring)"];
-  if(BROADCAST_CROPS.includes(crop.name)) return "m of rows";
+  if(BROADCAST_CROPS.has(crop.name)) return "m of rows";
   if(w >= 5) return "trees";
   if(w >= 2) return "trees/shrubs";
   if(w >= 1) return "plants/shrubs";
@@ -5465,7 +5435,7 @@ function renderAdjustSearchResult(){
   if(!matches.length && !lsMatches.length) return '<div style="color:var(--text-mid);font-size:11px;padding:6px 0">No crops or livestock matching that name.</div>';
   // Livestock results (prepended)
   const lsResultsHTML = lsMatches.map(ls => {
-    const safe = ls.name.replace(/'/g, "\\'");
+    const safe = escJs(ls.name);
     const outSummary = lsDisplayOutputs(ls).map(o => o.label).join(" + ");
     return `<div style="padding:6px 10px;background:#FFF8EC;border:2px solid #C8AA6E;font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <strong>${ls.name}</strong> <span class="tag" style="background:#EDE3CB;color:#7A5C00">Livestock</span>
@@ -5487,7 +5457,7 @@ function renderAdjustSearchResult(){
     return `<div style="padding:6px 10px;background:${bg};border:2px solid ${border};font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <strong>${c.name}</strong> ${tag(fg)} ${c.perennial?'<span class="tag" style="background:#EDE3CB">Perennial</span>':'<span class="tag" style="background:#E4EED4">Annual</span>'} ${suitBadge}
       <span style="color:var(--text-mid)">${adjY.toFixed(1)} t/ha · ${harvestStr}</span>
-      <button class="btn btn-sec" style="font-size:11px;padding:3px 9px;margin-left:auto" onclick="addCropFromSearch('${c.name.replace(/'/g,"\\\'")}')">+ Add</button>
+      <button class="btn btn-sec" style="font-size:11px;padding:3px 9px;margin-left:auto" onclick="addCropFromSearch('${escJs(c.name)}')">+ Add</button>
     </div>`;
   }).join("");
 
@@ -5652,7 +5622,7 @@ function renderStep5(){
     const count = m ? m[1].replace(/,/g,"") : 0;
     const isEdited = !!(adj[crop.name] && typeof adj[crop.name].ha === "number" && !adj[crop.name].removed);
     const harvest = MONTHS.map(mo => `<span class="adj-mcell ${crop.months[mo]==='P'?'p':crop.months[mo]==='S'?'s':''}"></span>`).join("");
-    const safeName = crop.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    const safeName = escJs(crop.name);
     if(removed){
       return `<div class="adj-crop-edit removed">
         <div>
@@ -5682,7 +5652,7 @@ function renderStep5(){
   const lsPlanEntries = p.lsSelected || [];
 
   function renderLivestockRow({ls, count}) {
-    const safeJs = ls.name.replace(/'/g, "\\'");
+    const safeJs = escJs(ls.name);
     const outTags = (function(){
       const spd = lsServesPerDay(ls, count);
       const spdLbl = spd >= 1 ? spd.toFixed(1) : spd.toFixed(2);
@@ -5741,7 +5711,7 @@ function renderStep5(){
   if(sugg.suggestions.length){
     const rows = sugg.suggestions.map(s => {
       const pc = plantCount(s.crop, s.suggestedHa);
-      const safe = s.crop.name.replace(/'/g, "\\'");
+      const safe = escJs(s.crop.name);
       const reasonsLine = s.reasons.slice(0, 3).join(", ");
       return `<div class="adj-suggest-row">
         <div style="flex:1;min-width:0">
@@ -5769,7 +5739,6 @@ function renderStep5(){
   }
 
   // ── Daily target coverage (rail) — compact gauges with 100% marker ──
-  const FG_BAR = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
   const cgRows = FLOOR_KEYS.map(k => {
     const target = totals[k] || 0;
     if(target <= 0) return "";
@@ -6225,8 +6194,7 @@ function renderStep6(){
     
     ${(()=>{
       // ── Species Schedule table ──────────────────────────────────────────────
-      const MNS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      const MKS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+      const MNS = MONTH_NAMES, MKS = MONTHS;
       const soilKey3 = (state.soilTexture||"medium").toLowerCase().replace(/ .*/,"");
       const rain3 = state.annualRainfall||750;
       if(!p.selected||!p.selected.length) return "";
@@ -6340,8 +6308,7 @@ function dbToggleLS(){ state.dbShowLivestock=!state.dbShowLivestock; renderApp()
 
 function renderStepDB(){
   const q = (state.dbSearch||"").trim().toLowerCase();
-  const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
-  const MON_LBL = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  const MON_LBL = MONTH_INITIALS;  // module-level MONTHS used directly
 
   // ── Filter & sort crops ──────────────────────────────────────────────────
   let crops = [...CROP_DATA];
@@ -6759,7 +6726,7 @@ function renderApp(){
         <span class="sci-sb grow">${stepLbl}</span>
         <span class="sci-sb"><i class="sb-dot"></i>Zone: <b>${zoneLbl}</b></span>
         <span class="sci-sb">Selected: <b>${nCrops}</b> crops</span>
-        <span class="sci-sb">DB: <b>190</b> records</span>
+        <span class="sci-sb">DB: <b>${CROP_DATA.length + LIVESTOCK_DATA.length}</b> records</span>
         <span class="sci-sb">ADG · BOM · EcoCrop</span>
       </div>
     </div>`;
@@ -6772,11 +6739,12 @@ function renderApp(){
   try{
     const pinned=document.querySelector(".adj-pinned");
     const sentinel=document.querySelector(".adj-stuck-sentinel");
+    if(window.__adjStuckOb){ window.__adjStuckOb.disconnect(); window.__adjStuckOb=null; }
     if(pinned && sentinel && "IntersectionObserver" in window){
-      const ob=new IntersectionObserver(([e])=>{
+      window.__adjStuckOb=new IntersectionObserver(([e])=>{
         pinned.classList.toggle("is-stuck", !e.isIntersecting && e.boundingClientRect.top <= 0);
       }, {threshold:[0,1]});
-      ob.observe(sentinel);
+      window.__adjStuckOb.observe(sentinel);
     }
   }catch(e){}
 }
@@ -6798,72 +6766,14 @@ function renderApp(){
   renderApp();
 })();
 
-/* ═══ TWEAKS — expressive theme controls (host protocol + persistence) ═══ */
+/* ── Theme defaults (data attributes consumed by the stylesheet) ── */
 (function(){
-  const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-    "accent": "olive",
-    "density": "dense",
-    "finish": "beveled"
-  }/*EDITMODE-END*/;
-  const tweaks = Object.assign({}, TWEAK_DEFAULTS);
-
-  function apply(){
-    const r = document.documentElement;
-    r.dataset.accent  = tweaks.accent;
-    r.dataset.density = tweaks.density;
-    r.dataset.finish  = tweaks.finish;
-  }
-  function persist(edits){ try{ window.parent.postMessage({type:'__edit_mode_set_keys', edits}, '*'); }catch(e){} }
-  function setTweak(k,v){ tweaks[k]=v; apply(); persist({[k]:v}); build(); }
-
-  const SWATCH = {olive:'#5C7A3A', amber:'#C99238', teal:'#3E7E78', clay:'#9A5A3A'};
-  const ACCENTS = [['olive','Olive'],['amber','Amber'],['teal','Teal'],['clay','Terracotta']];
-  const DENS = [['comfortable','Comfy'],['compact','Compact'],['dense','Dense']];
-  const FIN  = [['beveled','Beveled'],['flat','Flat']];
-
-  let panel;
-  function seg(key,opts){
-    return '<div class="twk-seg">'+opts.map(([v,l])=>
-      `<button class="twk-opt ${tweaks[key]===v?'on':''}" data-k="${key}" data-v="${v}">${l}</button>`).join('')+'</div>';
-  }
-  function swatches(){
-    return '<div class="twk-sw">'+ACCENTS.map(([v,l])=>
-      `<button class="twk-swb ${tweaks.accent===v?'on':''}" data-k="accent" data-v="${v}" title="${l}" style="background:${SWATCH[v]}"></button>`).join('')+'</div>';
-  }
-  function build(){
-    if(!panel){ panel=document.createElement('div'); panel.id='tweaks-panel'; panel.style.display='none'; document.body.appendChild(panel); }
-    panel.innerHTML = `
-      <div class="twk-title"><span>Tweaks</span><button class="twk-x" id="twkClose">✕</button></div>
-      <div class="twk-body">
-        <div class="twk-group"><div class="twk-lbl">Instrument palette</div>${swatches()}</div>
-        <div class="twk-group"><div class="twk-lbl">Data density</div>${seg('density',DENS)}</div>
-        <div class="twk-group"><div class="twk-lbl">Chrome finish</div>${seg('finish',FIN)}</div>
-      </div>`;
-    panel.querySelector('#twkClose').onclick = ()=>{ hide(); try{ window.parent.postMessage({type:'__edit_mode_dismissed'},'*'); }catch(e){} };
-    panel.querySelectorAll('[data-k]').forEach(b=> b.onclick = ()=> setTweak(b.dataset.k, b.dataset.v));
-  }
-  function show(){ build(); panel.style.display='block'; }
-  function hide(){ if(panel) panel.style.display='none'; }
-
-  window.addEventListener('message', e=>{
-    const d = e.data||{};
-    if(d.type==='__activate_edit_mode') show();
-    else if(d.type==='__deactivate_edit_mode') hide();
-  });
-  apply();
-  try{ window.parent.postMessage({type:'__edit_mode_available'}, '*'); }catch(e){}
+  const r = document.documentElement;
+  r.dataset.accent  = 'olive';
+  r.dataset.density = 'dense';
+  r.dataset.finish  = 'beveled';
 })();
 </script>
 
 </body>
 </html>
-<style id="__om-edit-overrides">
-#app .two-col label >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) { width: 3px !important }
-#app .two-col label >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) { width: 4px !important }
-:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) >span { font-family: "Segoe UI" !important }
-:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) >span { font-size: 10px !important }
-:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) >span { font-size: 11px !important }
-#app .two-col label >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) { width: 400px !important }
-#app .two-col label >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) { width: 368px !important }
-#app .two-col label >:is(h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,label,span,a,em,strong,small,td,th,caption) { width: 400px !important }
-</style>
