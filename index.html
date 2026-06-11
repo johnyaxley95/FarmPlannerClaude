@@ -1427,6 +1427,16 @@ const DIVERSITY_BONUS = {
   fruit:   { strength: 0.6,  fade: 0.75 },   // fruit: push harder — more variety preferred
 };
 function diversityCfg(key){ return DIVERSITY_BONUS[key] || DIVERSITY_BONUS.default; }
+// Diminishing returns on a single crop: the marginal value of supplying a month decays as
+// that month fills up, following a concave curve value = remaining^curve. Higher `curve`
+// = steeper drop-off = additional supply to an already-stocked month is worth little, so a
+// NEW crop (bringing fresh coverage) out-scores piling more onto an existing one. This makes
+// variety win on merit without any hard cap. Per-group; `default` applies if a group isn't listed.
+const DIMINISHING = {
+  default: { curve: 1.0 },   // 1.0 ≈ current mild behaviour
+  fruit:   { curve: 1.3 },   // fruit: mildly diminishing → spreads without slivering
+};
+function diminishingCfg(key){ return DIMINISHING[key] || DIMINISHING.default; }
 // Split the legacy ADG 6-value serves ({veg,fruit,starchy,protein,dairy,oils}) across 13 keys,
 // preserving total serving quantity. Ratios are sensible defaults (refine later if desired).
 function splitADG(a){
@@ -2557,14 +2567,18 @@ function generatePlan(s){
           // (coverage well below target) are weighted heavily so a crop that uniquely
           // covers a gap wins even if its other months overlap a glut.
           const supC = cropSupplyMonths(cand.crop);
+          const dcurve = diminishingCfg(key).curve;
           MONTHS.forEach((m, mi) => {
             const w = supC.months[mi];
             if(w <= 0.001) return;
             const cov = (monthCoverage[m][key] || 0) / targetServes;
             if(cov < 1.0){
-              // Heavier reward the emptier the month is (quadratic emphasis on true gaps).
-              const deficit = 1.0 - cov;
-              gapFillScore += deficit * (1 + deficit) * w;
+              // Diminishing marginal value: worth of supplying this month = remaining^curve.
+              // Steeper curve → near-full months give almost no credit, so a crop only scores
+              // for genuinely thin months. Variety wins because a NEW crop covering an emptier
+              // slice out-scores piling onto an already-stocked month of an existing crop.
+              const remaining = 1.0 - cov;
+              gapFillScore += Math.pow(remaining, dcurve) * w;
             } else {
               glutPenalty += (cov - 1.0) * w * 0.5;  // softer glut penalty
             }
@@ -2653,6 +2667,29 @@ function generatePlan(s){
         const covFrac = Math.min(1, (sup.coveredCount||0) / 12);
         if(covFrac <= 0) continue;
         let wantServes = sufficient ? remaining * 0.10 : Math.min(remaining, targetServes * covFrac);
+        // Diminishing-returns sizing (gap-scored groups): size the crop to the value its
+        // months can STILL absorb, not its full in-season share. Average remaining coverage
+        // across its supply window (concave via curve) scales the allocation down once those
+        // months are already stocked — so each added crop is smaller and the next gets room.
+        if(gapScored && !sufficient){
+          const dcurve = diminishingCfg(key).curve;
+          let remSum = 0, wSum = 0;
+          MONTHS.forEach((m, mi) => {
+            const w = sup.months[mi];
+            if(w <= 0.001) return;
+            const cov = (monthCoverage[m][key] || 0) / targetServes;
+            remSum += Math.pow(Math.max(0, 1 - cov), dcurve) * w;
+            wSum += w;
+          });
+          const marginal = wSum > 0 ? remSum / wSum : 1;
+          wantServes *= marginal;
+          // Practical floor: once a group is well-covered, a new crop whose marginal value is
+          // tiny isn't worth a token sliver of a tree. Below ~12% of a normal in-season share,
+          // stop adding crops to this group rather than producing 1-m² allocations.
+          const minMeaningful = targetServes * covFrac * 0.04;
+          if(wantServes < minMeaningful) break;
+          if(wantServes <= 0.01) continue;
+        }
         // Soft diversity nudge (fresh groups only): trim the first crop or two so the group
         // recruits another, fading as crops accumulate. self-limiting — by the 3rd+ crop the
         // factor is ~1 (no effect), so it never forces an impractical count. Storables are
