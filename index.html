@@ -1451,6 +1451,30 @@ const FG_SHORT={"Dark Green Vegetables":"Greens","Red/Orange Vegetables":"Red/Or
 const FG_GROUPS=["Dark Green Vegetables","Red/Orange Vegetables","Other Vegetables","Fruit","Tubers","Nuts & Seeds","Legumes","Eggs","Dairy","Meat"];
 // food_group string → internal key (13-group). Keep in sync with fgToKey().
 const FG_KEY={"Dark Green Vegetables":"darkgreen","Red/Orange Vegetables":"redorange","Other Vegetables":"othervet","Tubers":"starches","Fruit":"fruit","Grain (Cereal) Foods":"starches","Legumes":"legumes","Nuts & Seeds":"nutsseeds","Eggs":"eggs","Meat":"meat","Dairy":"dairy","Herbs":"herbs","Discretionary":"discretionary"};
+// ── Umbrella food groups (ADG-5 allocation model) ────────────────────────────
+// Phase 1 allocates against FIVE umbrella floors, not the 13 sub-groups, EXCEPT
+// vegetables which keep their three sub-floors (user wants the veg sub-groups
+// present in roughly equal thirds). Display, tags, NRV bars and the monthly grid
+// stay keyed by the real sub-group (a chickpea still shows "Legumes") — only the
+// allocation loop's targets/sufficiency are merged. members = the internal sub-keys
+// summed for this umbrella's target & coverage. The three veg umbrellas each own a
+// single sub-key, so they behave exactly as before (independent hard floors).
+const UMBRELLA_GROUPS = [
+  { id:"darkgreen", members:["darkgreen"],                       fresh:true  },
+  { id:"redorange", members:["redorange"],                       fresh:true  },
+  { id:"othervet",  members:["othervet"],                        fresh:true  },
+  { id:"fruit",     members:["fruit"],                           fresh:true  },
+  { id:"starches",  members:["starches"],                        fresh:false },
+  { id:"protein",   members:["legumes","nutsseeds","eggs","meat"], fresh:false },
+  { id:"dairy",     members:["dairy"],                           fresh:false },
+];
+// Internal sub-key → umbrella id (for crediting allocations & livestock to the
+// umbrella whose target/coverage they advance).
+const KEY_TO_UMBRELLA = (function(){
+  const o = {};
+  UMBRELLA_GROUPS.forEach(u => u.members.forEach(k => { o[k] = u.id; }));
+  return o;
+})();
 const SOIL_PH={sand_low:5.5,sand_medium:6.0,sand_high:6.5,loam_low:5.8,loam_medium:6.5,loam_high:7.0,clay_low:6.0,clay_medium:6.8,clay_high:7.5};
 
 // ── Preparation requirements lookup ──────────────────────────────────────────
@@ -1937,23 +1961,25 @@ function ensureCheckedLivestock(){
 // ── Plan generation ────────────────────────────────────────
 
 // ── Australian NHMRC Nutrient Reference Values (per person per day) ──────
-// Sources: NHMRC NRV tables (RDI for most, AI where no RDI established)
+// Sources: NHMRC NRV tables (RDI for most, AI where no RDI established).
+// fat = floor derived from the NHMRC AMDR for total fat (30% of energy ÷ 9 kcal/g),
+// rounded to whole grams — scales per demographic with each row's kcal.
 const NRV = {
-  toddler_1_3:    {kcal:1100,protein:14,fiber:14,ca:500,fe:9, mg:80, k:2000,zn:3, vitA:300,vitC:35, vitE:5, b1:0.5,b2:0.5,b3:6, b6:0.5,b12:0.9,folate:150},
-  child_4_8:      {kcal:1500,protein:20,fiber:18,ca:700,fe:10,mg:130,k:2300,zn:4, vitA:400,vitC:35, vitE:6, b1:0.6,b2:0.6,b3:8, b6:0.6,b12:1.2,folate:200},
-  child_9_11:     {kcal:1800,protein:34,fiber:24,ca:1000,fe:8,mg:200,k:3000,zn:6, vitA:600,vitC:40, vitE:9, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
-  girl_12_13:     {kcal:1900,protein:42,fiber:28,ca:1300,fe:8,mg:240,k:3400,zn:7, vitA:600,vitC:40, vitE:8, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
-  boy_12_13:      {kcal:2200,protein:42,fiber:31,ca:1300,fe:8,mg:240,k:3400,zn:7, vitA:600,vitC:40, vitE:8, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
-  girl_14_18:     {kcal:2100,protein:46,fiber:25,ca:1300,fe:15,mg:360,k:3800,zn:7,vitA:700,vitC:40, vitE:8, b1:1.1,b2:1.1,b3:14,b6:1.2,b12:2.4,folate:400},
-  boy_14_18:      {kcal:2600,protein:64,fiber:38,ca:1300,fe:11,mg:410,k:3800,zn:13,vitA:900,vitC:40,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.3,b12:2.4,folate:400},
-  woman_19_50:    {kcal:2000,protein:46,fiber:25,ca:1000,fe:18,mg:310,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.3,b12:2.4,folate:400},
-  man_19_50:      {kcal:2500,protein:64,fiber:30,ca:1000,fe:8, mg:400,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.3,b12:2.4,folate:400},
-  woman_51_70:    {kcal:1800,protein:46,fiber:25,ca:1300,fe:8, mg:320,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.5,b12:2.4,folate:400},
-  man_51_70:      {kcal:2300,protein:64,fiber:30,ca:1000,fe:8, mg:420,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.7,b12:2.4,folate:400},
-  woman_70_plus:  {kcal:1600,protein:57,fiber:25,ca:1300,fe:8, mg:320,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.5,b12:2.4,folate:400},
-  man_70_plus:    {kcal:1900,protein:81,fiber:30,ca:1300,fe:8, mg:420,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.7,b12:2.4,folate:400},
-  pregnant:       {kcal:2300,protein:60,fiber:28,ca:1000,fe:27,mg:360,k:2800,zn:11,vitA:800,vitC:55,vitE:7, b1:1.4,b2:1.4,b3:18,b6:1.9,b12:2.6,folate:600},
-  breastfeeding:  {kcal:2500,protein:67,fiber:30,ca:1000,fe:9, mg:330,k:3200,zn:12,vitA:1100,vitC:80,vitE:11,b1:1.4,b2:1.6,b3:17,b6:2.0,b12:2.8,folate:500},
+  toddler_1_3:    {kcal:1100,protein:14,fat:37,fiber:14,ca:500,fe:9, mg:80, k:2000,zn:3, vitA:300,vitC:35, vitE:5, b1:0.5,b2:0.5,b3:6, b6:0.5,b12:0.9,folate:150},
+  child_4_8:      {kcal:1500,protein:20,fat:50,fiber:18,ca:700,fe:10,mg:130,k:2300,zn:4, vitA:400,vitC:35, vitE:6, b1:0.6,b2:0.6,b3:8, b6:0.6,b12:1.2,folate:200},
+  child_9_11:     {kcal:1800,protein:34,fat:60,fiber:24,ca:1000,fe:8,mg:200,k:3000,zn:6, vitA:600,vitC:40, vitE:9, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
+  girl_12_13:     {kcal:1900,protein:42,fat:63,fiber:28,ca:1300,fe:8,mg:240,k:3400,zn:7, vitA:600,vitC:40, vitE:8, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
+  boy_12_13:      {kcal:2200,protein:42,fat:73,fiber:31,ca:1300,fe:8,mg:240,k:3400,zn:7, vitA:600,vitC:40, vitE:8, b1:0.9,b2:0.9,b3:12,b6:1.0,b12:1.8,folate:300},
+  girl_14_18:     {kcal:2100,protein:46,fat:70,fiber:25,ca:1300,fe:15,mg:360,k:3800,zn:7,vitA:700,vitC:40, vitE:8, b1:1.1,b2:1.1,b3:14,b6:1.2,b12:2.4,folate:400},
+  boy_14_18:      {kcal:2600,protein:64,fat:87,fiber:38,ca:1300,fe:11,mg:410,k:3800,zn:13,vitA:900,vitC:40,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.3,b12:2.4,folate:400},
+  woman_19_50:    {kcal:2000,protein:46,fat:67,fiber:25,ca:1000,fe:18,mg:310,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.3,b12:2.4,folate:400},
+  man_19_50:      {kcal:2500,protein:64,fat:83,fiber:30,ca:1000,fe:8, mg:400,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.3,b12:2.4,folate:400},
+  woman_51_70:    {kcal:1800,protein:46,fat:60,fiber:25,ca:1300,fe:8, mg:320,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.5,b12:2.4,folate:400},
+  man_51_70:      {kcal:2300,protein:64,fat:77,fiber:30,ca:1000,fe:8, mg:420,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.7,b12:2.4,folate:400},
+  woman_70_plus:  {kcal:1600,protein:57,fat:53,fiber:25,ca:1300,fe:8, mg:320,k:2800,zn:8,vitA:700,vitC:45, vitE:7, b1:1.1,b2:1.1,b3:14,b6:1.5,b12:2.4,folate:400},
+  man_70_plus:    {kcal:1900,protein:81,fat:63,fiber:30,ca:1300,fe:8, mg:420,k:3800,zn:14,vitA:900,vitC:45,vitE:10,b1:1.2,b2:1.3,b3:16,b6:1.7,b12:2.4,folate:400},
+  pregnant:       {kcal:2300,protein:60,fat:77,fiber:28,ca:1000,fe:27,mg:360,k:2800,zn:11,vitA:800,vitC:55,vitE:7, b1:1.4,b2:1.4,b3:18,b6:1.9,b12:2.6,folate:600},
+  breastfeeding:  {kcal:2500,protein:67,fat:83,fiber:30,ca:1000,fe:9, mg:330,k:3200,zn:12,vitA:1100,vitC:80,vitE:11,b1:1.4,b2:1.6,b3:17,b6:2.0,b12:2.8,folate:500},
 };
 
 const NUTRIENT_LABELS = {
@@ -2485,42 +2511,46 @@ function generatePlan(s){
     }
   });
 
-  // Protein/dairy groups: livestock competes with crops scored on serves/labour-hr
-  const allPhase1Groups = [...FG_GROUPS];
-  if(lsCandidates.some(lc => lc.key === 'dairy') && (targets.dairy||0) > 0) allPhase1Groups.push('__dairy__');
-
-  allPhase1Groups.forEach(fg => {
-    const isDairy = fg === '__dairy__';
-    const key = isDairy ? 'dairy' : FG_KEY[fg];
-    const targetServes = isDairy ? (targets.dairy||0) : (targets[key]||0);
+  // ── Iterate the FIVE umbrella groups (veg split into its 3 sub-floors). ──
+  // Each umbrella has a summed target across its member sub-keys; sufficiency and
+  // monthly coverage are evaluated on the umbrella TOTAL, so any mix of members can
+  // satisfy it (e.g. protein filled by whatever scores best — no per-sub-group floor).
+  // Crops/livestock still credit their own real sub-key in achieved[]/monthCoverage[],
+  // keeping the 13-group display intact.
+  UMBRELLA_GROUPS.forEach(umb => {
+    const members = umb.members;
+    const key = umb.id;                       // umbrella id (also a display key for single-member umbrellas)
+    // Summed target across the umbrella's member sub-keys.
+    const targetServes = members.reduce((s, k) => s + (targets[k] || 0), 0);
     if(targetServes <= 0) return;
-    const isFresh = PLANT_FRESH_KEYS.includes(key);
-    // Starches (merged grain+tubers) also get month-by-month gap scoring so the allocator
-    // chains the most LAND-EFFICIENT crop available each month (tubers dominate their
-    // windows; grain only fills residual gaps). Fresh groups chain for seasonal variety.
+    // Umbrella-total achieved serves / monthly coverage (sum over member sub-keys).
+    const umbServes   = () => members.reduce((s, k) => s + (achieved[k] || 0), 0);
+    const umbMonthCov = (m) => members.reduce((s, k) => s + (monthCoverage[m][k] || 0), 0);
+    const isFresh = umb.fresh;
+    // Starches & fresh groups get month-by-month gap scoring so the allocator chains the
+    // most land-efficient crop available each month (tubers dominate their windows; grain
+    // fills residual gaps; fresh groups chain for seasonal variety).
     const gapScored = isFresh || key === 'starches';
-    // Fresh crops always use tight cap for seasonal variety.
-    // Non-fresh: minimiseLabour/Space use a larger cap so one efficient crop
-    // can dominate the allocation, reducing total crop count.
-    // No per-crop food-group cap. Diversity for perishable groups emerges from the
-    // month-by-month fresh-coverage scoring (a single crop can't cover all 12 months,
-    // so the loop keeps pulling new crops to fill seasonal gaps). Storable groups
-    // (grain, tubers, legumes, nuts) consolidate to efficient sources, which is realistic.
-    const fgCandidates = isDairy ? [] : candidates.filter(x => FG_KEY[effectiveFoodGroup(x.crop)] === key);
-    const lsFgCands = lsCandidates.filter(lc => lc.key === key);
-    // No livestock per-species cap either — a single species may meet the full group target.
+    // Crop candidates whose sub-key belongs to THIS umbrella (protein = legumes∪nuts∪eggs∪meat).
+    const memberSet = new Set(members);
+    const fgCandidates = candidates.filter(x => memberSet.has(FG_KEY[effectiveFoodGroup(x.crop)]));
+    // Livestock competing within this umbrella (e.g. dairy animals, meat/egg birds).
+    const lsFgCands = lsCandidates.filter(lc => memberSet.has(lc.key));
+    // No livestock per-species cap — a single species may meet the full umbrella target.
     const lsCapFrac = 1.0;
-    const usedNames = new Set(selected.filter(s => !isDairy && FG_KEY[effectiveFoodGroup(s.crop)] === key).map(s => s.crop.name));
+    const usedNames = new Set(selected.filter(s => memberSet.has(FG_KEY[effectiveFoodGroup(s.crop)])).map(s => s.crop.name));
+    const lsBlocked = new Set();  // livestock species excluded mid-umbrella (e.g. red meat at ADG ceiling)
 
-    // Iterate; stop when target met AND (for fresh) worst month is at least 60%
+    // Iterate; stop when target met AND (for fresh/gap-scored) worst month is covered.
     let iter = 0;
     while(iter++ < 40){
-      const sufficient = achieved[key] >= targetServes - 0.1;
-      const overPlanted = achieved[key] >= targetServes * 1.3;  // hard cap at 130% annual
+      const achievedNow = umbServes();
+      const sufficient = achievedNow >= targetServes - 0.1;
+      const overPlanted = achievedNow >= targetServes * 1.3;  // hard cap at 130% annual
       let worstMonthCov = 1.0, peakMonthCov = 0;
       if(gapScored){
         MONTHS.forEach(m => {
-          const cov = (monthCoverage[m][key] || 0) / targetServes;
+          const cov = umbMonthCov(m) / targetServes;
           if(cov < worstMonthCov) worstMonthCov = cov;
           if(cov > peakMonthCov) peakMonthCov = cov;
         });
@@ -2551,13 +2581,15 @@ function generatePlan(s){
           // Use the crop's full supply window (harvest months + cool-store bridge), so a
           // crop that stores into an empty month is credited for filling it. Empty months
           // (coverage well below target) are weighted heavily so a crop that uniquely
-          // covers a gap wins even if its other months overlap a glut.
+          // covers a gap wins even if its other months overlap a glut. Coverage is the
+          // UMBRELLA total (sum over member sub-keys), so e.g. a legume and a nut both
+          // count toward the protein umbrella's monthly fill.
           const supC = cropSupplyMonths(cand.crop);
           const dcurve = diminishingCfg(key).curve;
           MONTHS.forEach((m, mi) => {
             const w = supC.months[mi];
             if(w <= 0.001) return;
-            const cov = (monthCoverage[m][key] || 0) / targetServes;
+            const cov = umbMonthCov(m) / targetServes;
             if(cov < 1.0){
               // Diminishing marginal value: worth of supplying this month = remaining^curve.
               // Steeper curve → near-full months give almost no credit, so a crop only scores
@@ -2584,6 +2616,12 @@ function generatePlan(s){
           // grain only wins residual months no efficient tuber covers. Gap-fill is the
           // tiebreaker so among similar-efficiency crops the one covering empty months wins.
           primary   = cand.adjYield * 1e6 / (cand.crop.serve_g || 75) / 10000;  // serves per m²
+          secondary = netGap;
+        } else if(key === 'protein'){
+          // Protein umbrella: best-fit by efficiency (the chosen mode's modeScore), with
+          // gap-fill spread as the tiebreaker so the diminishing-sizing + nudge can recruit a
+          // mix (legume + nut + egg/meat) rather than dumping the whole target on one source.
+          primary   = cand.modeScore;
           secondary = netGap;
         } else if(isFresh || objMode === "balanced"){
           primary   = netGap;
@@ -2621,10 +2659,20 @@ function generatePlan(s){
         const pasL = (s.pastureHa||0) - usedPastureHa;
         const swL  = (s.surfaceWaterHa||0) - usedSurfaceWaterHa;
         for(const lc of lsFgCands){
+          if(lsBlocked.has(lc.ls.name)) continue;
           if(lc.labourPerStep > labL + 0.1) continue;
           const poolLeft = AQUATIC_LIVESTOCK.has(lc.ls.name) ? swL : pasL;
           if(lc.spaceHaPerStep > poolLeft + 0.0001) continue;
           if(lsServesPerDay(lc.ls, lc.usedCount) >= targetServes * lsCapFrac) continue;
+          // ADG red-meat ceiling: skip a red-meat species once the household's aggregate
+          // red-meat serves/day have reached ~1/person/day. Forces the protein umbrella to
+          // recruit poultry/fish/eggs/nuts/legumes for the remaining ~half (the nudge then
+          // spreads that non-red-meat half across multiple sources).
+          if(isRedMeatLivestock(lc.ls)){
+            const cap = RED_MEAT_SERVES_PER_PERSON_DAY * ((s.household||[]).length || 1);
+            const usedRed = lsFgCands.reduce((a,c)=> a + (isRedMeatLivestock(c.ls) ? lsServesPerDay(c.ls, c.usedCount) : 0), 0);
+            if(usedRed >= cap - 1e-6) continue;
+          }
           if(lc.score > bestLsEff){ bestLsEff = lc.score; bestLs = lc; }
         }
       }
@@ -2641,14 +2689,29 @@ function generatePlan(s){
         const maxByLab = bestLs.labourPerStep > 0 ? Math.floor(labL2 / bestLs.labourPerStep) : 99;
         const maxByPas = bestLs.spaceHaPerStep > 0 ? Math.floor((pasL2+0.0001) / bestLs.spaceHaPerStep) : 99;
         const capServes = targetServes * lsCapFrac - lsServesPerDay(bestLs.ls, bestLs.usedCount);
-        const maxByCap = bestLs.servesPerStep > 0 ? Math.ceil(capServes / bestLs.servesPerStep) : 1;
-        const gapSteps = bestLs.servesPerStep > 0 ? Math.max(1, Math.ceil((targetServes - achieved[key]) / bestLs.servesPerStep)) : 1;
+        let maxByCap = bestLs.servesPerStep > 0 ? Math.ceil(capServes / bestLs.servesPerStep) : 1;
+        // ADG red-meat ceiling clamp: limit steps so the household's aggregate red-meat
+        // serves/day stay at or below ~1/person/day.
+        if(isRedMeatLivestock(bestLs.ls) && bestLs.servesPerStep > 0){
+          const cap = RED_MEAT_SERVES_PER_PERSON_DAY * ((s.household||[]).length || 1);
+          const usedRed = lsFgCands.reduce((a,c)=> a + (isRedMeatLivestock(c.ls) ? lsServesPerDay(c.ls, c.usedCount) : 0), 0);
+          const redHeadroom = Math.max(0, cap - usedRed);
+          maxByCap = Math.min(maxByCap, Math.floor(redHeadroom / bestLs.servesPerStep + 1e-6));
+        }
+        const gapSteps = bestLs.servesPerStep > 0 ? Math.max(1, Math.ceil((targetServes - umbServes()) / bestLs.servesPerStep)) : 1;
         const nSteps = Math.min(gapSteps, maxByCap, maxByLab, maxByPas, 5);
-        if(nSteps <= 0) break;
+        if(nSteps <= 0){
+          // If a red-meat species can't take even one step because it's at the ADG ceiling,
+          // exclude it and re-evaluate so crops/poultry/fish fill the remaining protein
+          // (rather than abandoning the umbrella). Otherwise the winner is genuinely blocked
+          // by land/labour/cap and we stop.
+          if(isRedMeatLivestock(bestLs.ls)){ lsBlocked.add(bestLs.ls.name); continue; }
+          break;
+        }
         addLivestockAllocation(bestLs, nSteps * bestLs.ls.step);
       } else if(best){
         usedNames.add(best.crop.name);
-        const remaining = targetServes - achieved[key];
+        const remaining = targetServes - umbServes();
         const sup = cropSupplyMonths(best.crop);
         const covFrac = Math.min(1, (sup.coveredCount||0) / 12);
         if(covFrac <= 0) continue;
@@ -2657,13 +2720,15 @@ function generatePlan(s){
         // months can STILL absorb, not its full in-season share. Average remaining coverage
         // across its supply window (concave via curve) scales the allocation down once those
         // months are already stocked — so each added crop is smaller and the next gets room.
+        // Applies to starches AND protein (both gap-scored umbrellas) so a single efficient
+        // source can't grab the whole target before the nudge recruits a second crop.
         if(gapScored && !sufficient){
           const dcurve = diminishingCfg(key).curve;
           let remSum = 0, wSum = 0;
           MONTHS.forEach((m, mi) => {
             const w = sup.months[mi];
             if(w <= 0.001) return;
-            const cov = (monthCoverage[m][key] || 0) / targetServes;
+            const cov = umbMonthCov(m) / targetServes;
             remSum += Math.pow(Math.max(0, 1 - cov), dcurve) * w;
             wSum += w;
           });
@@ -2676,14 +2741,17 @@ function generatePlan(s){
           if(wantServes < minMeaningful) break;
           if(wantServes <= 0.01) continue;
         }
-        // Soft diversity nudge (fresh groups only): trim the first crop or two so the group
-        // recruits another, fading as crops accumulate. self-limiting — by the 3rd+ crop the
-        // factor is ~1 (no effect), so it never forces an impractical count. Storables are
-        // exempt (we want them consolidated to efficient sources).
-        if(isFresh && !sufficient){
+        // Soft diversity nudge: trim the first crop or two so the umbrella recruits another,
+        // fading as crops accumulate (self-limiting — by the 3rd+ crop the factor is ~1, so it
+        // never forces an impractical count). Fires on the fresh veg/fruit umbrellas AND on the
+        // merged STARCHES and PROTEIN umbrellas (so a mix — e.g. legume + nut — is recruited
+        // rather than one efficient source dominating). DAIRY is intentionally excluded: one
+        // efficient dairy source realistically covers the whole group.
+        const nudgeApplies = isFresh || key === 'protein' || key === 'starches';
+        if(nudgeApplies && !sufficient){
           const dcfg = diversityCfg(key);
           if(dcfg.strength > 0){
-            const priorCrops = Math.max(0, usedNames.size - 1);  // crops already in this group
+            const priorCrops = Math.max(0, usedNames.size - 1);  // crops already in this umbrella
             const trim = dcfg.strength * Math.pow(dcfg.fade, priorCrops);
             wantServes *= (1 - trim);
           }
@@ -2727,7 +2795,11 @@ function generatePlan(s){
         const lph = cropLabour(best.crop, isMech);
         const labourLeft = labourCap - usedLabour;
         if(lph * allocHa > labourLeft){ allocHa = lph > 0 ? labourLeft / lph : 0; if(allocHa <= 0.0005) continue; }
-        addAllocation(best.crop, allocHa, key);
+        // Credit the crop's OWN sub-group key (e.g. a walnut → "nutsseeds"), so achieved[]
+        // and monthCoverage[] stay keyed by the real 13-group taxonomy (display intact).
+        // The umbrella's summed target/coverage is what the loop above tracks.
+        const creditKey = FG_KEY[effectiveFoodGroup(best.crop)] || key;
+        addAllocation(best.crop, allocHa, creditKey);
       } else { break; }
     }
   });
@@ -2793,12 +2865,25 @@ function generatePlan(s){
         if(p15Handled.has(gapKey)) continue;
         if((nutAccum[gapKey]||0) >= gapNeed * P15_THRESHOLD) continue;
 
-        // Score pool by annual nutrient yield per ha for this gap
+        // Score pool for this gap. Two factors:
+        //   • nutPerHaYr  — nutrient delivered per hectare-year (land efficiency)
+        //   • density      — nutrient per 100g of food (nutritional concentration)
+        // Ranking on land-efficiency ALONE lets a high-tonnage, low-density crop (e.g.
+        // beetroot at ~45 t/ha) win an energy/fat gap by sheer mass, producing absurd
+        // 20-serve vegetable blocks. Blending in per-gram density steers calorie/fat/
+        // zinc/iron gaps toward concentrated sources (nuts, seeds) — the realistic fix —
+        // while still respecting land cost. The geometric-style blend (nutPerHaYr × √density)
+        // keeps both forces in play rather than letting either dominate.
         const scored = p15Pool
           .filter(c => !p15AllocNames.has(c.crop.name) && (c.crop.nut[gapKey]||0) > 0)
-          .map(c => ({ cand:c, nutPerHaYr: c.adjYield * 10000 * (c.crop.nut[gapKey]||0) }))
+          .map(c => {
+            const density = c.crop.nut[gapKey] || 0;            // per 100g
+            const nutPerHaYr = c.adjYield * 10000 * density;    // per ha-yr
+            const score = nutPerHaYr * Math.sqrt(density);      // density-weighted
+            return { cand:c, nutPerHaYr, density, score };
+          })
           .filter(x => x.nutPerHaYr > 0)
-          .sort((a,b) => b.nutPerHaYr - a.nutPerHaYr);
+          .sort((a,b) => b.score - a.score);
 
         if(!scored.length){ p15Handled.add(gapKey); continue; }
 
@@ -3915,7 +4000,7 @@ function landCompositionFigure(s, p){
 function nrvFigure(s, p){
   const yieldNut = nutritionalYield(p, s.fertility, s.confidence);
   const dailyNRV = householdNRV(s.household);
-  const order = ["kcal","protein","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
+  const order = ["kcal","protein","fat","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
   const fmtN = v => v < 1000 ? v.toFixed(0) : v >= 1e6 ? (v/1e6).toFixed(1)+"M" : v >= 1e4 ? Math.round(v/1000)+"k" : Math.round(v).toLocaleString();
   const rows = order.map(n => {
     const produced = yieldNut[n] || 0;
@@ -4018,6 +4103,16 @@ function compactBudgetStrip(s, p){
 // Aromatic herbs — kept in DB and crop selection, but excluded from auto plan
 // (you only need tiny amounts, no point allocating land or labour to them)
 const AQUATIC_LIVESTOCK = new Set(["Rainbow Trout"]);
+// ── ADG red-meat ceiling ─────────────────────────────────────────────────────
+// The Australian Dietary Guidelines cap LEAN RED MEAT at ~7 serves/person/week
+// (≈1 serve/person/day) — beef, lamb, veal, pork, goat, kangaroo. Poultry, fish and
+// eggs are NOT subject to this ceiling. We classify red meat as a Meat-group animal
+// whose category is Ruminant or Omnivore (pig); Poultry & Aquaculture are exempt.
+const RED_MEAT_CATEGORIES = new Set(["Ruminant", "Omnivore"]);
+function isRedMeatLivestock(ls){
+  return !!ls && ls.food_group === "Meat" && RED_MEAT_CATEGORIES.has(ls.category);
+}
+const RED_MEAT_SERVES_PER_PERSON_DAY = 1.0;  // ADG: ~7/week ≈ 1/day
 const AQUATIC_CROPS     = new Set(["Water Spinach","Taro","Rice (Brown)","Rice (White)","Rice (Wild)"]);
 const HERB_EXCLUSIONS = new Set([
   "Basil","Chives","Coriander (Fresh)","Dill","Lemongrass","Mint","Parsley","Parsley (Curly)","Rosemary"
@@ -4161,7 +4256,7 @@ document.addEventListener("click", function(e){
 
 function nutPillsHtml(nut){
   if(!nut) return "";
-  const show = [["kcal","kcal"],["protein","protein"],["fiber","fibre"],
+  const show = [["kcal","kcal"],["protein","protein"],["fat","fat"],["fiber","fibre"],
     ["vitC","vit C"],["ca","Ca"],["fe","Fe"],["vitA","vit A"],["vitD","vit D"],["b12","B12"]];
   return show.filter(([k]) => nut[k]!=null && nut[k]>0)
     .map(([k,l]) => `<span class="db-nut-pill">${l}: ${nut[k]}</span>`).join("");
@@ -4324,7 +4419,7 @@ function renderStep1(){
   }).join("");
   const annual = state.hoursPerWeek * 52;
   const householdNRVs = state.household.length > 0 ? householdNRV(state.household) : {};
-  const nrvOrder = ["kcal","protein","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
+  const nrvOrder = ["kcal","protein","fat","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
   // ── ADG dietary targets → horizontal bar graph (serves/day per food group) ──
   const fgList = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].color]);
   const adgMax = Math.max(1, ...fgList.map(([l,k]) => totals[k] || 0));
@@ -5767,7 +5862,7 @@ function renderStep5(){
   const dailyNRV = householdNRV(state.household);
   const annualNRV = {};
   Object.entries(dailyNRV).forEach(([k,v]) => annualNRV[k] = v * 365);
-  const order = ["kcal","protein","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
+  const order = ["kcal","protein","fat","fiber","ca","fe","mg","k","zn","vitA","vitC","vitE","b1","b2","b3","b6","folate"];
   const nrvList = [];
   const nutRows = order.map(n => {
     const produced = yieldNut[n] || 0;
