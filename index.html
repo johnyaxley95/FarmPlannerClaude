@@ -1091,6 +1091,12 @@ fieldset.sci-fig > legend{font-family:var(--ui);font-weight:700;font-size:11px;
 .cg-val{font-family:var(--mono);font-size:10px;font-weight:700;text-align:right;white-space:nowrap}
 .cg-val.under{color:var(--iron)}
 .cg-val.ok{color:var(--green-dk)}
+.cg-track-stack{display:flex;overflow:hidden}
+.cg-seg{height:100%;border-right:1px solid var(--card)}
+.cg-seg:last-of-type{border-right:none}
+.cg-sublegend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;padding-top:7px;border-top:1px solid var(--border-dk)}
+.cg-sublegend .cg-leg-item{display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--text-mid)}
+.cg-sublegend .cg-leg-sw{width:9px;height:9px;border:1px solid var(--border-dk);flex:0 0 auto}
 .cg-delta-up{color:var(--green);font-weight:700}
 .cg-delta-down{color:var(--iron);font-weight:700}
 
@@ -1386,6 +1392,60 @@ const FG_DISPLAY = {
 const FG_DISPLAY_ROWS = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].tag]);
 // Bar colours per internal food-group key (shared by Step 4 and Step 5 charts).
 const FG_BAR = (function(){const o={};FG_KEYS.forEach(k=>o[k]=FG_DISPLAY[k].color);return o;})();
+
+// ── Umbrella display layer (ADG-5) ───────────────────────────────────────────
+// Maps the five umbrella groups to a label + base hue, and gives each member
+// sub-group a SHADE of that hue so stacked bars read as one umbrella at a glance
+// while the sub-group segments stay distinguishable. Order within `members`
+// = light → dark stacking order. Single source of truth for the Step 4 donut,
+// the Step 5 coverage rail, and the manual-adjust rail.
+const UMBRELLA_DISPLAY = [
+  { id:"vegetables", label:"Vegetables", base:"#4E7A34",
+    members:[
+      { key:"darkgreen", label:"Dark Green", shade:"#2E5E26" },
+      { key:"redorange", label:"Red/Orange", shade:"#6E9B3A" },
+      { key:"othervet",  label:"Other Veg",  shade:"#9DBE63" },
+    ] },
+  { id:"fruit", label:"Fruit", base:"#7A4FA8",
+    members:[
+      { key:"fruit", label:"Fruit", shade:"#7A4FA8" },
+    ] },
+  { id:"starches", label:"Starches", base:"#B08A2E",
+    members:[
+      { key:"starches", label:"Tubers & Grain", shade:"#A98C38" },
+    ] },
+  { id:"protein", label:"Protein", base:"#9A4A3A",
+    members:[
+      { key:"legumes",   label:"Legumes", shade:"#B5824A" },
+      { key:"nutsseeds", label:"Nuts & Seeds", shade:"#9A5A3A" },
+      { key:"eggs",      label:"Eggs",    shade:"#C8A030" },
+      { key:"meat",      label:"Meat",    shade:"#7A2E2E" },
+    ] },
+  { id:"dairy", label:"Dairy", base:"#6A7A8A",
+    members:[
+      { key:"dairy", label:"Dairy", shade:"#6A7A8A" },
+    ] },
+];
+// sub-group key → its umbrella display entry (for quick lookup).
+const UMB_OF_KEY = (function(){
+  const o = {};
+  UMBRELLA_DISPLAY.forEach(u => u.members.forEach(m => { o[m.key] = u; }));
+  return o;
+})();
+// sub-group key → its shade colour.
+const SHADE_OF_KEY = (function(){
+  const o = {};
+  UMBRELLA_DISPLAY.forEach(u => u.members.forEach(m => { o[m.key] = m.shade; }));
+  return o;
+})();
+// Compute an umbrella's combined target / achieved by summing its member sub-keys.
+function umbrellaSum(map){
+  return UMBRELLA_DISPLAY.map(u => ({
+    umb: u,
+    members: u.members.map(m => ({ ...m, val: map[m.key] || 0 })),
+    total: u.members.reduce((s,m) => s + (map[m.key] || 0), 0),
+  }));
+}
 // Per-crop IN-SEASON daily-rate cap, in serves per person, applied while a crop is
 // supplying (harvest + storage window). null = no cap. Set per group to limit how much
 // any single crop can dominate its active season — forcing more crops in for diversity.
@@ -4423,8 +4483,12 @@ function renderStep1(){
   // ── ADG dietary targets → horizontal bar graph (serves/day per food group) ──
   const fgList = FLOOR_KEYS.map(k => [FG_DISPLAY[k].label, k, FG_DISPLAY[k].color]);
   const adgMax = Math.max(1, ...fgList.map(([l,k]) => totals[k] || 0));
-  // ── ADG dietary targets → pie (donut) of serve composition by food group ──
-  const adgSegs = fgList.map(([l,k,col]) => ({label:l, val: totals[k]||0, color: col})).filter(s => s.val > 0.001);
+  // ── ADG dietary targets → donut of serve composition by the FIVE umbrella groups ──
+  // Step 4 shows targets at the umbrella level (the five ADG groups the plan is built
+  // around); sub-group detail lives on the Step 5 coverage rail instead.
+  const adgSegs = umbrellaSum(totals)
+    .map(u => ({ label:u.umb.label, val:u.total, color:u.umb.base }))
+    .filter(s => s.val > 0.001);
   const adgTotal = adgSegs.reduce((s,d)=>s+d.val,0);
   const hcx=78,hcy=78,hRo=68,hRi=38; let hAng=-Math.PI/2;
   const adgSlices = adgTotal>0 ? adgSegs.map(d=>{
@@ -5833,13 +5897,17 @@ function renderStep5(){
     </div>`;
   }
 
-  // ── Daily target coverage (rail) — compact gauges with 100% marker ──
-  const cgRows = FLOOR_KEYS.map(k => {
-    const target = totals[k] || 0;
+  // ── Daily target coverage (rail) — ONE stacked bar per umbrella group ────────
+  // Each bar's segments are the contributing sub-groups (shades of the umbrella hue),
+  // widths proportional to each sub-group's achieved serves vs the umbrella target.
+  // The umbrella total % and (in adjust mode) its delta sit at the right.
+  const cgRows = umbrellaSum(totals).map(({umb, total: target}) => {
     if(target <= 0) return "";
-    const actual = p.achieved[k] || 0;
-    const baseActual = state.plan.achieved[k] || 0;
-    const pct = target > 0 ? Math.round(actual/target*100) : 0;
+    // achieved per member sub-group
+    const memAch = umb.members.map(m => ({ ...m, ach: p.achieved[m.key] || 0 }));
+    const actual = memAch.reduce((s,m) => s + m.ach, 0);
+    const baseActual = umb.members.reduce((s,m) => s + (state.plan.achieved[m.key] || 0), 0);
+    const pct = Math.round(actual / target * 100);
     const deltaPct = Math.round((actual - baseActual) / target * 100);
     let deltaStr = "";
     if(isAdj && Math.abs(deltaPct) >= 1){
@@ -5847,14 +5915,38 @@ function renderStep5(){
       const arrow = deltaPct > 0 ? "↑" : "↓";
       deltaStr = ` <span class="${cls2}">${arrow}${Math.abs(deltaPct)}</span>`;
     }
-    const labels = (function(){const o={};FG_KEYS.forEach(kk=>o[kk]=FG_DISPLAY[kk].label);return o;})();
     const valCls = pct >= 100 ? "ok" : "under";
+    // Build stacked segments. Each width = ach/target as % of the track (track = 100% target).
+    // Segments are capped collectively at 100% width so the bar can't overflow the track;
+    // the umbrella total % to the right still shows true coverage (incl. any overshoot).
+    let cumPct = 0;
+    const segs = memAch.filter(m => m.ach > 0.0001).map(m => {
+      let wPct = m.ach / target * 100;
+      if(cumPct + wPct > 100) wPct = Math.max(0, 100 - cumPct);
+      cumPct += wPct;
+      if(wPct <= 0) return "";
+      const title = `${m.label}: ${m.ach.toFixed(1)} srv/day`;
+      return `<div class="cg-seg" style="width:${wPct}%;background:${m.shade}" title="${title}"></div>`;
+    }).join("");
     return `<div class="cg-row">
-      <span class="cg-lbl">${labels[k]}</span>
-      <div class="cg-track"><div class="cg-fill" style="width:${Math.min(100,pct)}%;background:${FG_BAR[k]}"></div><div class="cg-100"></div></div>
+      <span class="cg-lbl">${umb.label}</span>
+      <div class="cg-track cg-track-stack">${segs}<div class="cg-100"></div></div>
       <span class="cg-val ${valCls}">${pct}%${deltaStr}</span>
     </div>`;
   }).filter(r=>r).join("");
+  // Sub-group legend — only the umbrellas that actually split (Veg, Protein, Starches
+  // has one label but keep for clarity if >1). Shows which shade is which sub-group.
+  const cgSubLegend = (function(){
+    const items = [];
+    umbrellaSum(totals).forEach(({umb, total}) => {
+      if(total <= 0 || umb.members.length < 2) return;
+      umb.members.forEach(m => {
+        if((totals[m.key]||0) <= 0 && (p.achieved[m.key]||0) <= 0) return;
+        items.push(`<span class="cg-leg-item"><span class="cg-leg-sw" style="background:${m.shade}"></span>${m.label}</span>`);
+      });
+    });
+    return items.length ? `<div class="cg-sublegend">${items.join("")}</div>` : "";
+  })();
 
   // ── Nutrient analysis (right column) ──
   const yieldNut = nutritionalYield(p, state.fertility, state.confidence);
@@ -5938,6 +6030,7 @@ function renderStep5(){
           <h3>Daily target coverage <span class="live">live</span></h3>
           <div class="vp-body">
             ${cgRows}
+            ${cgSubLegend}
             <div style="font-size:9px;color:var(--text-mid);margin-top:6px">% of household ADG serves/day · marker = 100% target</div>
           </div>
         </div>
